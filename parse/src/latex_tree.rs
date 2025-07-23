@@ -23,6 +23,7 @@ pub enum Node<'a> {
 }
 
 impl<'a> Node<'a> {
+    /// Formats this [`Node`] into its LaTeX string representation
     pub fn to_small_string(&self) -> String {
         match self {
             Node::DelimitedGroup(_) => r"'\left'".into(),

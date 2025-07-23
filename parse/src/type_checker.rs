@@ -29,6 +29,7 @@ pub enum Type {
 }
 
 impl Type {
+    /// If `self` is a list type, returns the list member type (base type). If not, returns `self`
     pub fn base(&self) -> BaseType {
         match self {
             Type::Number | Type::NumberList => BaseType::Number,
@@ -39,6 +40,7 @@ impl Type {
         }
     }
 
+    /// Create a list type identifier from a given member [`BaseType`]
     pub fn list_of(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::NumberList,
@@ -49,6 +51,7 @@ impl Type {
         }
     }
 
+    /// Create a type identifier from a given [`BaseType`]
     pub fn single(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::Number,
@@ -58,7 +61,7 @@ impl Type {
             BaseType::Empty => Type::Number,
         }
     }
-
+    /// Returns whether this type identifier is a list
     pub fn is_list(&self) -> bool {
         matches!(
             self,

@@ -783,6 +783,9 @@ pub struct AssignmentIndex(usize);
 
 pub type ExpressionToAssignment = TiVec<ExpressionIndex, Option<Result<AssignmentIndex, String>>>;
 
+/// Resolves [`ast::Expression::Identifier`](crate::ast::Expression::Identifier) strings into unique [`Expression::Identifier`]s,
+/// as well as inlining all [`ast::Expression::Call`](crate::ast::Expression::Call)
+/// and [`ast::Expression::CallOrMultiply`](crate::ast::Expression::CallOrMultiply) nodes.
 pub fn resolve_names(
     list: &ExpressionList<impl Borrow<ExpressionListEntry>>,
 ) -> (TiVec<AssignmentIndex, Assignment>, ExpressionToAssignment) {

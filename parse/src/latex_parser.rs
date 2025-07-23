@@ -326,7 +326,7 @@ fn parse_nodes<'a>(
 
     Ok(())
 }
-
+/// Parses a LaTeX source string into a list of [`Node`] token trees
 pub fn parse_latex(source: &str) -> Result<Nodes, ParseError> {
     let mut lexer = Lexer::new(source);
     let mut nodes = vec![];

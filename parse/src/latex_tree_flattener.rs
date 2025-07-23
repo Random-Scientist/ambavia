@@ -51,6 +51,7 @@ pub enum Token<'a> {
 }
 
 impl<'a> Token<'a> {
+    /// Formats this [`Token`] to its canonical LaTeX representation
     pub fn to_small_string(&self) -> String {
         match self {
             Token::IdentFrag(string) | Token::Number(string) => format!("'{string}'"),
