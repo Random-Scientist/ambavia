@@ -1,4 +1,4 @@
-## Parsing
+## Parsing overview
 
 ### LaTeX
 Desmos expressions are internally represented in the [LaTeX](https://www.latex-project.org/) markup language.
@@ -23,13 +23,14 @@ The entry point for AST parsing is [`ast_parser::parse_expression_list_entry`](/
 
 ### Name Resolution
 
-Desmos' variable name resolution and scoping rules are rather labrynthine due to the many possible interactions between wackscopes, dynamic rebinding via `with` and `for` as well as function parameter binding. The name resolution process consumes a list of every `ExpressionListEntry` in the graph state and returns a list of [`Assignment`](/parse/src/name_resolver.rs)s, that provide the values of all of the globals in the graphstate. [`name_resolver::Expression`](/parse/src/name_resolver.rs) is effectively an `ast::Expression` with all its function calls inlined and identifier names erased such that each usize `Identifier` node is bound by an `Assignment` exactly once.
+Desmos' variable name resolution and scoping rules are rather labrynthine due to the many possible interactions between wackscopes, dynamic rebinding via `with` and `for` as well as function parameter binding. The name resolution process consumes a list of every `ExpressionListEntry` in the graph state and returns a list of [`Assignment`](/parse/src/name_resolver.rs)s, that provide the values of all of the globals in the graphstate. [`name_resolver::Expression`](/parse/src/name_resolver.rs) is effectively an `ast::Expression` with all its function calls inlined and identifier names erased such that each usize `Identifier` has exactly one corresponding `Assignment`.
 
 The entry point for name resolution is [`name_resolver::resolve_names`](/parse/src/name_resolver.rs).
 
 ### Type Checking
 
-Compared to name resolution, type checking is fairly simple. Each global `name_resolver::Assignment`
-//TODO
+Compared to name resolution, type checking is fairly straightforwards. The type checker recursively descends the untyped [`name_resolver::Expression`] tree, where each expression maps its children's types into a result type until all expressions have types. built-in functions with differently typed overloads also resolved into unique BuiltIn variants.
 
+The output of this stage, [`TypedExpression`](/parse/src/type_checker.rs), is a fully typed program tree representation that is used as the input for the [current evaluation backend](/eval/src/compiler.rs).
 
+The entry point for type checking is [`type_checker::type_check`](/parse/src/type_checker.rs)
