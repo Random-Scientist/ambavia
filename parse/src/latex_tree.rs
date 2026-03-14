@@ -82,17 +82,17 @@ impl<'a> fmt::Display for Node<'a> {
                     f,
                     r"\left{}{}\right{}",
                     match left {
-                        Bracket::Paren => '(',
-                        Bracket::Square => '[',
-                        Bracket::Brace => '{',
-                        Bracket::Pipe => '|',
+                        Bracket::Paren => "(",
+                        Bracket::Square => "[",
+                        Bracket::Brace => r"\{",
+                        Bracket::Pipe => "|",
                     },
                     NodesDisplayer(inner),
                     match right {
-                        Bracket::Paren => ')',
-                        Bracket::Square => ']',
-                        Bracket::Brace => '}',
-                        Bracket::Pipe => '|',
+                        Bracket::Paren => ")",
+                        Bracket::Square => "]",
+                        Bracket::Brace => r"\}",
+                        Bracket::Pipe => "|",
                     },
                 )?;
             }
