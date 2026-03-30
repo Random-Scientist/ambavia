@@ -160,11 +160,19 @@ impl Bounds {
     }
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub enum CursorMode {
+    #[default]
+    NoPreference,
+    Hidden,
+    Icon(CursorIcon),
+}
+
 #[derive(Debug, Default)]
 pub struct Response {
     pub consumed_event: bool,
     pub requested_redraw: bool,
-    pub cursor_icon: CursorIcon,
+    pub cursor_mode: CursorMode,
 }
 
 impl Response {
@@ -184,12 +192,12 @@ impl Response {
         Response {
             consumed_event: self.consumed_event | other.consumed_event,
             requested_redraw: self.requested_redraw | other.requested_redraw,
-            cursor_icon: if self.consumed_event
-                || !other.consumed_event && self.cursor_icon != CursorIcon::Default
+            cursor_mode: if self.consumed_event
+                || !other.consumed_event && self.cursor_mode != CursorMode::NoPreference
             {
-                self.cursor_icon
+                self.cursor_mode
             } else {
-                other.cursor_icon
+                other.cursor_mode
             },
         }
     }

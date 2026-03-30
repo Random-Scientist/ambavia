@@ -15,7 +15,7 @@ use crate::{
         GeometryKind::{Line, Plot, Point},
     },
     math_field::{Cursor, Interactiveness, MathField, Message, UserSelection},
-    ui::{Bounds, Context, Event, QuadKind, Response},
+    ui::{Bounds, Context, CursorMode, Event, QuadKind, Response},
     utility::{mix, unmix},
 };
 use eval::{
@@ -245,9 +245,9 @@ impl Output {
                 let (grab, grabbing) = (CursorIcon::EwResize, CursorIcon::EwResize);
 
                 if dragging.is_some() {
-                    response.cursor_icon = grabbing;
+                    response.cursor_mode = CursorMode::Icon(grabbing);
                 } else if *hovered {
-                    response.cursor_icon = grab;
+                    response.cursor_mode = CursorMode::Icon(grab);
                 }
 
                 let bounds = Bounds {
@@ -660,7 +660,7 @@ impl Expression {
             && !field_bounds.contains(ctx.cursor)
             && !output_bounds.contains(ctx.cursor)
         {
-            r.cursor_icon = CursorIcon::Pointer;
+            r.cursor_mode = CursorMode::Icon(CursorIcon::Pointer);
             if event == &Event::MouseInput(ElementState::Pressed, MouseButton::Left) {
                 r.consume_event();
                 if !self.field.has_focus() {

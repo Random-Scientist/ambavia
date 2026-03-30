@@ -15,7 +15,7 @@ use winit::{
 };
 
 use crate::{
-    ui::{Bounds, Context, Event, Response},
+    ui::{Bounds, Context, CursorMode, Event, Response},
     utility::{AsGlam, mix, unmix},
 };
 
@@ -177,7 +177,20 @@ impl App {
                 self.request_redraw = true;
                 // self.window.request_redraw();
             }
-            self.window.set_cursor(response.cursor_icon);
+
+            if matches!(my_event, Event::CursorMoved { .. }) {
+                self.window.set_cursor_visible(true);
+            }
+
+            match response.cursor_mode {
+                CursorMode::NoPreference => {
+                    self.window.set_cursor(CursorIcon::Default);
+                }
+                CursorMode::Hidden => self.window.set_cursor_visible(false),
+                CursorMode::Icon(icon) => {
+                    self.window.set_cursor(icon);
+                }
+            }
         }
 
         match event {
@@ -269,7 +282,7 @@ impl MainThing {
         }
 
         if hovering || self.dragging.is_some() {
-            response.cursor_icon = CursorIcon::ColResize;
+            response.cursor_mode = CursorMode::Icon(CursorIcon::ColResize);
 
             // Really should be using TouchPhase here to not interrupt people
             // who started using these before we got hovered

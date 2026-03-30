@@ -16,7 +16,7 @@ use crate::{
         OPERATORNAMES, TexturedQuad, Tree, ends_in_operatorname, new_big_op, new_bracket, new_char,
         new_frac, new_radical, new_script, new_script_lower, new_script_upper, new_sqrt, to_latex,
     },
-    ui::{Bounds, Context, Event, QuadKind, Response},
+    ui::{Bounds, Context, CursorMode, Event, QuadKind, Response},
     utility::{mix, snap},
 };
 use parse::{
@@ -1110,9 +1110,9 @@ impl MathField {
 
         if hovered.is_some() {
             if write || self.dragging {
-                response.cursor_icon = CursorIcon::Text;
+                response.cursor_mode = CursorMode::Icon(CursorIcon::Text);
             } else if select {
-                response.cursor_icon = CursorIcon::Pointer;
+                response.cursor_mode = CursorMode::Icon(CursorIcon::Pointer);
             }
         }
 
@@ -1128,6 +1128,7 @@ impl MathField {
             }) if self.has_focus() => {
                 use winit::keyboard::{Key, NamedKey};
                 let Selection { mut path, span } = self.selection.as_ref().unwrap().into();
+                let mut hide_cursor = true;
 
                 match &logical_key {
                     Key::Named(NamedKey::Enter) if write => {
@@ -1916,6 +1917,7 @@ impl MathField {
                             if select
                                 && (ctx.modifiers.control_key() || ctx.modifiers.super_key()) =>
                         {
+                            hide_cursor = false;
                             if let SelectionSpan::Range(r) = span {
                                 let latex = to_latex(&self.tree.walk(&path)[r]).to_string();
                                 if let Err(e) = ctx.set_clipboard_text(latex) {
@@ -1928,6 +1930,7 @@ impl MathField {
                             if select
                                 && (ctx.modifiers.control_key() || ctx.modifiers.super_key()) =>
                         {
+                            hide_cursor = false;
                             if let SelectionSpan::Range(r) = span {
                                 let nodes = self.tree.walk_mut(&path);
                                 let latex = to_latex(&nodes[r.clone()]).to_string();
@@ -2202,6 +2205,10 @@ impl MathField {
                         _ => {}
                     },
                     _ => {}
+                }
+
+                if hide_cursor {
+                    response.cursor_mode = CursorMode::Hidden;
                 }
             }
             Event::CursorMoved { .. } if self.dragging => {

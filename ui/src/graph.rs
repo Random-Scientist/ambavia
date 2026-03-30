@@ -19,6 +19,7 @@ use crate::{
     Bounds, Context, Event, Response,
     expression_list::ExpressionId,
     graph::{sample_explicit::sample_explicit, sample_implicit::sample_implicit},
+    ui::CursorMode,
     utility::{flip_y, snap},
 };
 
@@ -489,7 +490,7 @@ impl GraphPaper {
         }
 
         if self.hovered_point.is_some() {
-            response.cursor_icon = CursorIcon::AllScroll;
+            response.cursor_mode = CursorMode::Icon(CursorIcon::AllScroll);
         }
 
         (response, dragged_point)
