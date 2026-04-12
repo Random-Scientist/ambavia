@@ -639,14 +639,7 @@ impl GraphPaper {
         ctx.set_scissor_rect(&mut pass, bounds);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_pipeline(&self.pipeline);
-        pass.draw(
-            0..if shapes[vertices.last().unwrap().shape as usize].kind == Shape::LINE {
-                vertices.len() as u32 - 1
-            } else {
-                vertices.len() as u32
-            } * 6,
-            0..1,
-        );
+        pass.draw(0..vertices.len() as u32 * 6, 0..1);
     }
 
     fn generate_geometry(
@@ -925,6 +918,10 @@ impl GraphPaper {
                 }
             }
         }
+
+        // The vertex shader will check an extra vertex when drawing lines, so
+        // we push this to avoid an out-of-bounds access in the shader
+        vertices.push(Vertex::BREAK);
 
         (shapes, vertices, segments)
     }

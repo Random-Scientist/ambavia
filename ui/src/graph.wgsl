@@ -59,31 +59,53 @@ fn vs_graph(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     }
 
     let shape = shapes[vertex.shape];
+    let corner = vec2(0 < j && j < 4, 1 < j && j < 5);
     var p: vec2f;
 
-    if shape.kind == LINE || shape.kind == POINT {
-        let p0 = vertex.position;
-        var p1: vec2f;
+    if shape.kind == LINE {
+        // https://www.desmos.com/calculator/0lcnwqrxld
+        let v0 = vertex;
+        let v1 = vertices[i + 1];
+        if v1.shape != v0.shape {
+            return VertexOutput();
+        }
 
-        if shape.kind == LINE {
-            let next = vertices[i + 1];
-            if next.shape != vertex.shape {
-                return VertexOutput();
+        let p0 = v0.position;
+        let p1 = v1.position;
+
+        let is_first_segment = i == 0 || vertices[i - 1].shape != vertex.shape;
+        let a0 = f32(is_first_segment);
+
+        let v2 = vertices[i + 2];
+        var a1 = 1.0;
+
+        if v2.shape == v0.shape {
+            let p2 = v2.position;
+            var t0 = p1 - p0;
+            var t1 = p2 - p1;
+            let l0 = dot(t0, t0);
+            let l1 = dot(t1, t1);
+
+            if l0 == 0.0 {
+                a1 = f32(is_first_segment);
+            } else if l1 == 0.0 {
+                a1 = 1.0;
+            } else {
+                let d = max(dot(t0, t1), 0.0);
+                a1 = sqrt(max(1.0 - d * d / (l0 * l1), 0.0));
             }
-            p1 = next.position;
-        } else /* if shape.kind == POINT */ {
-            p1 = p0;
         }
 
         var t = select(normalize(p1 - p0), vec2(1.0, 0.0), all(p0 == p1));
         t *= 0.5 * shape.width;
         let n = vec2(-t.y, t.x);
-        p = select(p1 + t, p0 - t, 0 < j && j < 4) + select(n, -n, 1 < j && j < 5);
-    } else {
+        p = select(p0 - a0 * t, p1 + a1 * t, corner.x) + select(-n, n, corner.y);
+    } else if shape.kind == POINT {
+        p = vertex.position + 0.5 * shape.width * select(vec2(-1.0), vec2(1.0), corner);
+    } else /* if shape.kind == RECTANGLE || shape.kind == TILE */ {
         let h = f32(uniforms.tile_size);
         let w = select(shape.width, h, shape.kind == TILE);
-        let offset = vec2(select(0.0, w, 0 < j && j < 4), select(0.0, h, 1 < j && j < 5));
-        p = vertex.position + offset;
+        p = vertex.position + select(vec2(0.0), vec2(w, h), corner);
     }
     
     let z = bitcast<f32>(vertex.shape + 0x00800000);
