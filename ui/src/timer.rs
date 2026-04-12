@@ -1,6 +1,5 @@
+#![allow(unused)]
 use std::time::{Duration, Instant};
-
-use num_integer::Roots;
 
 enum TimerAction {
     Start(String, Instant),
@@ -19,7 +18,7 @@ pub struct TimerHandle<'a> {
 }
 
 impl<'a> TimerHandle<'a> {
-    pub fn start(&mut self, name: impl Into<String>) -> TimerHandle {
+    pub fn start(&mut self, name: impl Into<String>) -> TimerHandle<'_> {
         match (self.do_sections, self.timer.as_mut()) {
             (true, Some(timer)) => timer.start(name),
             _ => TimerHandle {
@@ -48,7 +47,7 @@ impl<'a> Drop for TimerHandle<'a> {
 }
 
 impl Timer {
-    pub fn start(&mut self, name: impl Into<String>) -> TimerHandle {
+    pub fn start(&mut self, name: impl Into<String>) -> TimerHandle<'_> {
         self.actions
             .push(TimerAction::Start(name.into(), Instant::now()));
         self.starts_minus_stops += 1;
@@ -84,10 +83,10 @@ impl Timer {
                     let (i, start) = stack.pop().unwrap();
                     times[i] = stop.duration_since(*start);
 
-                    if let Some((j, _)) = stack.last() {
-                        if let Some(accounted_time) = accounted_times.get_mut(*j) {
-                            *accounted_time = Some(times[i] + accounted_time.unwrap_or_default());
-                        }
+                    if let Some((j, _)) = stack.last()
+                        && let Some(accounted_time) = accounted_times.get_mut(*j)
+                    {
+                        *accounted_time = Some(times[i] + accounted_time.unwrap_or_default());
                     }
                 }
             }
@@ -182,8 +181,9 @@ impl DurationStatsTracker {
             total: self.total,
             mean: self.total / self.count as u32,
             stdev: Duration::from_nanos(
-                ((self.total_of_squared - self.total.as_nanos().pow(2) / self.count.max(1) as u128)
-                    / (self.count - 1).max(1) as u128)
+                (((self.total_of_squared
+                    - self.total.as_nanos().pow(2) / self.count.max(1) as u128)
+                    / (self.count - 1).max(1) as u128) as f64)
                     .sqrt() as _,
             ),
             min: self.min,

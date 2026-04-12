@@ -11,6 +11,7 @@ typed-index-collections = { workspace = true }
 derive_more = { workspace = true, features = ["add"] }
 
 arboard = "3.6.0"
+rayon = "1.11.0"
 ryu = "1.0.20"
 bytemuck = { version = "1.23.1", features = ["derive"] }
 image = { version = "0.25.6", default-features = false, features = [

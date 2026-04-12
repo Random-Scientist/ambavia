@@ -1,5 +1,6 @@
 mod sample_explicit;
 mod sample_implicit;
+mod tile_fill;
 
 use std::{
     collections::HashMap,
@@ -7,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytemuck::Zeroable;
 use eval::vm::{self, Instruction, VarIndex, Vm};
 use glam::{DVec2, Vec2, dvec2, uvec2};
 use parse::analyze_expression_list::PlotKind;
@@ -18,7 +20,11 @@ use winit::{
 use crate::{
     Bounds, Context, Event, Response,
     expression_list::ExpressionId,
-    graph::{sample_explicit::sample_explicit, sample_implicit::sample_implicit},
+    graph::{
+        sample_explicit::sample_explicit,
+        sample_implicit::sample_implicit,
+        tile_fill::{Segment, TILE_SIZE, Tile},
+    },
     ui::CursorMode,
     utility::{flip_y, snap},
 };
@@ -44,6 +50,7 @@ pub enum GeometryKind {
         p: DVec2,
         draggable: Option<ExpressionId>,
     },
+    Fill(Vec<DVec2>),
     Plot {
         kind: PlotKind<f64>,
         inputs: Vec<VarIndex>,
@@ -76,12 +83,15 @@ pub struct GraphPaper {
     shapes_buffer: wgpu::Buffer,
     vertices_capacity: usize,
     vertices_buffer: wgpu::Buffer,
+    segments_capacity: usize,
+    segments_buffer: wgpu::Buffer,
 }
 
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 #[repr(C)]
 struct Uniforms {
     resolution: Vec2,
+    tile_size: u32,
 }
 
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
@@ -90,19 +100,22 @@ struct Shape {
     color: [f32; 4],
     width: f32,
     kind: u32,
-    padding: [u32; 2],
+    tile: Tile,
+    padding: [u32; 3],
 }
 
 impl Shape {
     const LINE: u32 = 0;
     const POINT: u32 = 1;
+    const RECTANGLE: u32 = 2;
+    const TILE: u32 = 3;
 
     fn line(color: [f32; 4], width: f32) -> Self {
         Self {
             color,
             width,
             kind: Shape::LINE,
-            padding: [0; 2],
+            ..Shape::zeroed()
         }
     }
 
@@ -111,7 +124,25 @@ impl Shape {
             color,
             width,
             kind: Shape::POINT,
-            padding: [0; 2],
+            ..Shape::zeroed()
+        }
+    }
+
+    fn rectangle(color: [f32; 4], width: f32) -> Self {
+        Self {
+            color,
+            width,
+            kind: Shape::RECTANGLE,
+            ..Shape::zeroed()
+        }
+    }
+
+    fn tile(color: [f32; 4], tile: Tile) -> Self {
+        Self {
+            color,
+            kind: Shape::TILE,
+            tile,
+            ..Shape::zeroed()
         }
     }
 }
@@ -182,22 +213,25 @@ fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu:
     })
 }
 
-fn shapes_buffer_with_capacity(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+fn buffer_with_capacity<T>(device: &wgpu::Device, label: &str, capacity: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("shapes_buffer"),
-        size: (size_of::<Shape>() * capacity) as _,
+        label: Some(label),
+        size: (size_of::<T>() * capacity) as _,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     })
 }
 
+fn shapes_buffer_with_capacity(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    buffer_with_capacity::<Shape>(device, "shapes", capacity)
+}
+
 fn vertices_buffer_with_capacity(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("vertices_buffer"),
-        size: (size_of::<Vertex>() * capacity) as _,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-        mapped_at_creation: false,
-    })
+    buffer_with_capacity::<Vertex>(device, "vertices", capacity)
+}
+
+fn segments_buffer_with_capacity(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    buffer_with_capacity::<Segment>(device, "segments", capacity)
 }
 
 fn create_bind_group(
@@ -206,6 +240,7 @@ fn create_bind_group(
     uniforms_buffer: &wgpu::Buffer,
     shapes_buffer: &wgpu::Buffer,
     vertices_buffer: &wgpu::Buffer,
+    segments_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("graph_bind_group"),
@@ -223,6 +258,10 @@ fn create_bind_group(
                 binding: 2,
                 resource: wgpu::BindingResource::Buffer(vertices_buffer.as_entire_buffer_binding()),
             },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Buffer(segments_buffer.as_entire_buffer_binding()),
+            },
         ],
     })
 }
@@ -238,6 +277,7 @@ impl GraphPaper {
         queue: &wgpu::Queue,
         shapes: &[Shape],
         vertices: &[Vertex],
+        segments: &[Segment],
     ) {
         let mut new_buffers = false;
         let grow = |x, y: usize| y.max(x);
@@ -254,6 +294,12 @@ impl GraphPaper {
             self.vertices_buffer = vertices_buffer_with_capacity(device, self.vertices_capacity);
         }
 
+        if segments.len() > self.segments_capacity {
+            new_buffers = true;
+            self.segments_capacity = grow(self.segments_capacity, segments.len());
+            self.segments_buffer = segments_buffer_with_capacity(device, self.segments_capacity);
+        }
+
         if new_buffers {
             self.bind_group = create_bind_group(
                 device,
@@ -261,11 +307,13 @@ impl GraphPaper {
                 &self.uniforms_buffer,
                 &self.shapes_buffer,
                 &self.vertices_buffer,
+                &self.segments_buffer,
             )
         }
 
         queue.write_buffer(&self.shapes_buffer, 0, bytemuck::cast_slice(shapes));
         queue.write_buffer(&self.vertices_buffer, 0, bytemuck::cast_slice(vertices));
+        queue.write_buffer(&self.segments_buffer, 0, bytemuck::cast_slice(segments));
     }
 
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> GraphPaper {
@@ -273,6 +321,7 @@ impl GraphPaper {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("graph_bind_group_layout"),
             entries: &[
+                // uniforms
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -283,6 +332,7 @@ impl GraphPaper {
                     },
                     count: None,
                 },
+                // shapes
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -293,8 +343,20 @@ impl GraphPaper {
                     },
                     count: None,
                 },
+                // vertices
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // segments
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -359,12 +421,15 @@ impl GraphPaper {
         let shapes_buffer = shapes_buffer_with_capacity(device, shapes_capacity);
         let vertices_capacity = 1;
         let vertices_buffer = vertices_buffer_with_capacity(device, vertices_capacity);
+        let segments_capacity = 1;
+        let segments_buffer = segments_buffer_with_capacity(device, segments_capacity);
         let bind_group = create_bind_group(
             device,
             &layout,
             &uniforms_buffer,
             &shapes_buffer,
             &vertices_buffer,
+            &segments_buffer,
         );
         GraphPaper {
             viewport: Default::default(),
@@ -383,6 +448,8 @@ impl GraphPaper {
             shapes_buffer,
             vertices_capacity,
             vertices_buffer,
+            segments_capacity,
+            segments_buffer,
         }
     }
 
@@ -510,7 +577,7 @@ impl GraphPaper {
             return;
         }
 
-        let (shapes, vertices) = self.generate_geometry(ctx, bounds);
+        let (shapes, vertices, segments) = self.generate_geometry(ctx, bounds);
 
         if vertices.is_empty() {
             return;
@@ -534,9 +601,10 @@ impl GraphPaper {
             0,
             bytemuck::cast_slice(&[Uniforms {
                 resolution: uvec2(config.width, config.height).as_vec2(),
+                tile_size: TILE_SIZE,
             }]),
         );
-        self.write(device, queue, &shapes, &vertices);
+        self.write(device, queue, &shapes, &vertices, &segments);
         let graph_texture_view = self.graph_texture.create_view(&Default::default());
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -581,9 +649,14 @@ impl GraphPaper {
         );
     }
 
-    fn generate_geometry(&mut self, ctx: &Context, bounds: Bounds) -> (Vec<Shape>, Vec<Vertex>) {
+    fn generate_geometry(
+        &mut self,
+        ctx: &Context,
+        bounds: Bounds,
+    ) -> (Vec<Shape>, Vec<Vertex>, Vec<Segment>) {
         let mut shapes = vec![];
         let mut vertices = vec![];
+        let mut segments = vec![];
         let vp = &self.viewport;
         let vp_size = dvec2(vp.width, vp.width * bounds.size.y / bounds.size.x);
         let physical = ctx.to_physical(bounds);
@@ -833,9 +906,26 @@ impl GraphPaper {
                     shapes.push(Shape::point(*color, ctx.scale_factor as f32 * width));
                     vertices.push(Vertex::new(p, shape));
                 }
+                GeometryKind::Fill(points) => {
+                    tile_fill::tile_fill(
+                        physical,
+                        &points.iter().cloned().map(to_physical).collect::<Vec<_>>(),
+                        &mut segments,
+                        |position, item| {
+                            let shape = shapes.len() as u32;
+                            shapes.push(match item {
+                                tile_fill::Item::Rectangle { width } => {
+                                    Shape::rectangle(*color, width)
+                                }
+                                tile_fill::Item::Tile(tile) => Shape::tile(*color, tile),
+                            });
+                            vertices.push(Vertex::new(position, shape));
+                        },
+                    );
+                }
             }
         }
 
-        (shapes, vertices)
+        (shapes, vertices, segments)
     }
 }

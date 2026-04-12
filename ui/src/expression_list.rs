@@ -10,10 +10,7 @@ use winit::{
 };
 
 use crate::{
-    graph::{
-        Geometry,
-        GeometryKind::{Line, Plot, Point},
-    },
+    graph::{Geometry, GeometryKind},
     math_field::{Cursor, Interactiveness, MathField, Message, UserSelection},
     ui::{Bounds, Context, CursorMode, Event, QuadKind, Response},
     utility::{mix, unmix},
@@ -1201,6 +1198,8 @@ impl ExpressionList {
                         [0.376, 0.259, 0.651, 1.0],
                         [0.0, 0.0, 0.0, 1.0],
                     ];
+                    let line_width = 2.5;
+                    let fill_opacity = 0.4;
                     let point = |nodes: &mut Vec<Node>, x: f64, y: f64| {
                         let mut inner = vec![];
                         number(&mut inner, x);
@@ -1257,7 +1256,7 @@ impl ExpressionList {
                                     data: OutputData::DraggablePoint(Geometry {
                                         width: 8.0,
                                         color: colors[i.0 % colors.len()],
-                                        kind: Point {
+                                        kind: GeometryKind::Point {
                                             p: dvec2(x, y),
                                             draggable: Some(i),
                                         },
@@ -1337,7 +1336,7 @@ impl ExpressionList {
                                     geometry.push(Geometry {
                                         width: 8.0,
                                         color,
-                                        kind: Point {
+                                        kind: GeometryKind::Point {
                                             p: dvec2(x, y),
                                             draggable: None,
                                         },
@@ -1431,9 +1430,9 @@ impl ExpressionList {
                                         PlotKind::Implicit => PlotKind::Implicit,
                                     };
                                     output.data = OutputData::Geometry(vec![Geometry {
-                                        width: 2.5,
+                                        width: line_width,
                                         color,
-                                        kind: Plot {
+                                        kind: GeometryKind::Plot {
                                             kind,
                                             inputs: parameters
                                                 .iter()
@@ -1505,29 +1504,49 @@ impl ExpressionList {
                                         Type::Polygon => {
                                             let a = vm.vars[v].clone().list();
                                             let a = a.borrow();
-                                            geometry.push(Geometry {
-                                                width: 2.5,
-                                                color,
-                                                kind: Line(
+                                            let fill = Geometry {
+                                                width: line_width,
+                                                color: [color[0], color[1], color[2], fill_opacity],
+                                                kind: GeometryKind::Fill(
                                                     a.chunks(2)
-                                                        .chain(a.chunks(2).take(if a.len() > 2 {
-                                                            1
-                                                        } else {
-                                                            0
-                                                        }))
                                                         .map(|p| dvec2(p[0], p[1]))
                                                         .collect(),
                                                 ),
-                                            });
+                                            };
+                                            let line = Geometry {
+                                                width: line_width,
+                                                color,
+                                                kind: GeometryKind::Line(
+                                                    a.chunks(2)
+                                                        .chain(a.chunks(2).next())
+                                                        .map(|p| dvec2(p[0], p[1]))
+                                                        .collect(),
+                                                ),
+                                            };
+                                            geometry.extend([fill, line]);
                                         }
                                         Type::PolygonList => {
                                             let a = vm.vars[v].clone().polygon_list();
-                                            geometry.extend(a.borrow().iter().map(|a| {
+                                            geometry.extend(a.borrow().iter().flat_map(|a| {
                                                 let a = a.borrow();
-                                                Geometry {
-                                                    width: 2.5,
+                                                let fill = Geometry {
+                                                    width: line_width,
+                                                    color: [
+                                                        color[0],
+                                                        color[1],
+                                                        color[2],
+                                                        fill_opacity,
+                                                    ],
+                                                    kind: GeometryKind::Fill(
+                                                        a.chunks(2)
+                                                            .map(|p| dvec2(p[0], p[1]))
+                                                            .collect(),
+                                                    ),
+                                                };
+                                                let line = Geometry {
+                                                    width: line_width,
                                                     color,
-                                                    kind: Line(
+                                                    kind: GeometryKind::Line(
                                                         a.chunks(2)
                                                             .chain(a.chunks(2).take(
                                                                 if a.len() > 2 { 1 } else { 0 },
@@ -1535,7 +1554,8 @@ impl ExpressionList {
                                                             .map(|p| dvec2(p[0], p[1]))
                                                             .collect(),
                                                     ),
-                                                }
+                                                };
+                                                [fill, line]
                                             }));
                                         }
                                         Type::Bool | Type::BoolList => unreachable!(),
@@ -1603,8 +1623,16 @@ impl ExpressionList {
                         if e.has_focus() {
                             for mut g in geometry.iter().cloned() {
                                 g.width *= match g.kind {
-                                    Line(_) | Plot { .. } => 1.4,
-                                    Point { .. } => 1.2,
+                                    GeometryKind::Line(_) | GeometryKind::Plot { .. } => 1.4,
+                                    GeometryKind::Point { .. } => 1.2,
+                                    GeometryKind::Fill(_) => 1.0,
+                                };
+                                g.color[3] = match g.kind {
+                                    GeometryKind::Line(_) | GeometryKind::Plot { .. } => 1.0,
+                                    GeometryKind::Point { .. } | GeometryKind::Fill(_) => {
+                                        // Same as blending over itself, as if it was rendered twice
+                                        1.0 - (1.0 - g.color[3]).powi(2)
+                                    }
                                 };
                                 focussed_geometry.push(g);
                             }
