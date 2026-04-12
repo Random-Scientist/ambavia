@@ -82,6 +82,7 @@ pub const OPERATORNAMES: &[&str] = &[
     "sec",
     "round",
     "rgb",
+    "repeat",
     "real",
     "random",
     "quartile",

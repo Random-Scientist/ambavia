@@ -697,6 +697,17 @@ impl TypeChecker {
                     {
                         checked_args[0].ty = Type::PointList;
                     }
+                    OpName::Repeat if checked_args.len() == 2 => {
+                        if checked_args[1].ty == Type::EmptyList {
+                            checked_args[1].ty = Type::NumberList;
+                        }
+                        if checked_args[0].ty == Type::EmptyList
+                            && checked_args[1].ty != Type::NumberList
+                        {
+                            // Induce an error
+                            checked_args[0].ty = Type::NumberList
+                        }
+                    }
                     _ => {}
                 }
                 let (

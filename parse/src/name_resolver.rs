@@ -99,6 +99,7 @@ impl OpName {
             "total" => Total,
             "mean" => Mean,
             "count" => Count,
+            "repeat" => Repeat,
             "unique" => Unique,
             "uniquePerm" => UniquePerm,
             "sort" => Sort,

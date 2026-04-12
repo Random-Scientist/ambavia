@@ -3,6 +3,7 @@ use std::{
     collections::HashSet,
     fmt::Write,
     hash::{DefaultHasher, Hash, Hasher},
+    iter::zip,
     rc::Rc,
 };
 
@@ -106,6 +107,12 @@ pub enum Instruction {
     Count,
     Count2,
     CountPolygonList,
+    Repeat,
+    Repeat2,
+    RepeatPolygon,
+    RepeatList,
+    Repeat2List,
+    RepeatPolygonList,
     Unique,
     Unique2,
     UniquePolygon,
@@ -813,6 +820,69 @@ impl<'a, 'i> Vm<'a, 'i> {
                 Instruction::CountPolygonList => {
                     let a = self.pop().polygon_list();
                     self.push(a.borrow().len() as f64);
+                }
+                Instruction::Repeat => {
+                    let count = self.pop().number().round().max(0.0) as usize;
+                    let value = self.pop().number();
+                    self.push(Rc::new(RefCell::new(vec![value; count])));
+                }
+                Instruction::Repeat2 => {
+                    let count = self.pop().number().round().max(0.0) as usize;
+                    let y = self.pop().number();
+                    let x = self.pop().number();
+                    self.push(Rc::new(RefCell::new([x, y].repeat(count))));
+                }
+                Instruction::RepeatPolygon => {
+                    let count = self.pop().number().round().max(0.0) as usize;
+                    let value = self.pop().list();
+                    self.push(Rc::new(RefCell::new(vec![value; count])));
+                }
+                Instruction::RepeatList => {
+                    let counts = self.pop().list();
+                    let counts = counts.borrow();
+                    let values = self.pop().list();
+                    let values = values.borrow();
+                    let mut list = vec![];
+
+                    // TODO "When the arguments of 'repeat' are lists, they must have the same length."
+                    for (&value, &count) in zip(values.iter(), counts.iter()) {
+                        let count = count.round().max(0.0) as usize;
+                        list.resize(list.len() + count, value);
+                    }
+
+                    self.push(Rc::new(RefCell::new(list)));
+                }
+                Instruction::Repeat2List => {
+                    let counts = self.pop().list();
+                    let counts = counts.borrow();
+                    let values = self.pop().list();
+                    let values = values.borrow();
+                    let mut list = vec![];
+
+                    for (&[x, y], &count) in zip(values.as_chunks().0, counts.iter()) {
+                        let count = count.round().max(0.0) as usize;
+                        list.reserve(count * 2);
+                        for _ in 0..count {
+                            list.push(x);
+                            list.push(y);
+                        }
+                    }
+
+                    self.push(Rc::new(RefCell::new(list)));
+                }
+                Instruction::RepeatPolygonList => {
+                    let counts = self.pop().list();
+                    let counts = counts.borrow();
+                    let values = self.pop().polygon_list();
+                    let values = values.borrow();
+                    let mut list = vec![];
+
+                    for (value, &count) in zip(values.iter(), counts.iter()) {
+                        let count = count.round().max(0.0) as usize;
+                        list.resize(list.len() + count, Rc::clone(value));
+                    }
+
+                    self.push(Rc::new(RefCell::new(list)));
                 }
                 Instruction::Unique => {
                     let a = self.pop().list();

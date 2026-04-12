@@ -219,7 +219,12 @@ impl InstructionBuilder {
             Index => (Type::NumberList, Type::Number, Type::Number),
             Index2 => (Type::PointList, Type::Number, Type::Point),
             IndexPolygonList => (Type::PolygonList, Type::Number, Type::Polygon),
-            BuildListFromRange => (Type::Number, Type::Number, Type::NumberList),
+            Repeat | BuildListFromRange => (Type::Number, Type::Number, Type::NumberList),
+            Repeat2 => (Type::Point, Type::Number, Type::PointList),
+            RepeatPolygon => (Type::Polygon, Type::Number, Type::PolygonList),
+            RepeatList => (Type::NumberList, Type::NumberList, Type::NumberList),
+            Repeat2List => (Type::PointList, Type::NumberList, Type::PointList),
+            RepeatPolygonList => (Type::PolygonList, Type::NumberList, Type::PolygonList),
             _ => panic!("instruction '{instr:?}' not binary"),
         };
         self.assert_pop(b, b_type);
