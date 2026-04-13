@@ -515,11 +515,18 @@ impl<'a> Resolver<'a> {
     fn resolve_substitutions(
         &mut self,
         body: &'a ast::Expression,
-        kind: ScopeKind,
+        is_lexical: bool,
         bindings: impl Iterator<Item = (&'a String, &'a ast::Expression)>,
         error: impl FnOnce(String) -> NameError,
     ) -> Result<Expression, NameError> {
         let mut substitutions = HashMap::new();
+        let kind = if is_lexical {
+            ScopeKind::Lexical {
+                line_count: self.line_count + 1,
+            }
+        } else {
+            ScopeKind::Dynamic
+        };
 
         for (name, value) in bindings {
             if substitutions.contains_key(name.as_str()) {
@@ -540,8 +547,17 @@ impl<'a> Resolver<'a> {
             );
         }
 
+        if is_lexical {
+            self.line_count += 1;
+        }
+
         let (body, _) =
             self.resolve_expression_with_dependencies(body, Some((kind, substitutions)));
+
+        if is_lexical {
+            self.line_count -= 1;
+        }
+
         body
     }
 
@@ -575,21 +591,12 @@ impl<'a> Resolver<'a> {
         }
 
         self.cycle_detector.push(callee)?;
-        self.line_count += 1;
-        let kind = if self.use_v1_9_scoping_rules {
-            ScopeKind::Dynamic
-        } else {
-            ScopeKind::Lexical {
-                line_count: self.line_count,
-            }
-        };
         let value = self.resolve_substitutions(
             body,
-            kind,
+            !self.use_v1_9_scoping_rules,
             zip(parameters, args),
             NameError::DuplicateFunctionParameter,
         );
-        self.line_count -= 1;
         self.cycle_detector.pop();
         value
     }
@@ -677,7 +684,7 @@ impl<'a> Resolver<'a> {
                 substitutions,
             } => self.resolve_substitutions(
                 body,
-                ScopeKind::Dynamic,
+                false,
                 substitutions.iter().map(|(n, v)| (n, v)),
                 NameError::DuplicateWithSubstitution,
             ),
@@ -1048,17 +1055,9 @@ pub fn resolve_names<'a>(
                             |resolver| {
                                 static ARG: OnceLock<ast::Expression> = OnceLock::new();
                                 resolver.cycle_detector.push(name).unwrap();
-                                resolver.line_count += 1;
-                                let kind = if resolver.use_v1_9_scoping_rules {
-                                    ScopeKind::Dynamic
-                                } else {
-                                    ScopeKind::Lexical {
-                                        line_count: resolver.line_count,
-                                    }
-                                };
                                 let value = resolver.resolve_substitutions(
                                     body,
-                                    kind,
+                                    !resolver.use_v1_9_scoping_rules,
                                     zip(
                                         parameters,
                                         [ARG.get_or_init(|| {
@@ -1067,7 +1066,6 @@ pub fn resolve_names<'a>(
                                     ),
                                     NameError::DuplicateFunctionParameter,
                                 );
-                                resolver.line_count -= 1;
                                 resolver.cycle_detector.pop();
                                 value
                             },
@@ -3025,6 +3023,112 @@ mod tests {
                     ("<anonymous function argument>".into(), Id(0)),
                     ("a".into(), Id(4)),
                 ]),
+            ),
+        );
+    }
+
+    #[test]
+    fn function_with() {
+        assert_eq(
+            resolve_names_ti(&[
+                // f(a) = a
+                ElFunction {
+                    name: "f".into(),
+                    parameters: vec!["a".into()],
+                    body: AId("a".into()),
+                },
+                // g(b) = f(b)
+                ElFunction {
+                    name: "g".into(),
+                    parameters: vec!["b".into()],
+                    body: ACallMul {
+                        callee: "f".into(),
+                        args: vec![AId("b".into())],
+                    },
+                },
+                // g(1) with b = 2
+                ElExpr(AWith {
+                    body: bx(ACallMul {
+                        callee: "g".into(),
+                        args: vec![ANum(1.0)],
+                    }),
+                    substitutions: vec![("b".into(), ANum(2.0))],
+                }),
+            ]),
+            (
+                vec![
+                    // freevar <anonymous function argument>: 0
+                    // a = <anonymous function argument>
+                    Assignment {
+                        id: Id(1),
+                        name: "a".into(),
+                        value: Expression::Identifier(Id(0)),
+                    },
+                    // f(<anonymous function argument>)
+                    Assignment {
+                        id: Id(2),
+                        name: "<anonymous function plot>".into(),
+                        value: Expression::Identifier(Id(1)),
+                    },
+                    // b = <anonymous function argument>
+                    Assignment {
+                        id: Id(3),
+                        name: "b".into(),
+                        value: Expression::Identifier(Id(0)),
+                    },
+                    // a = b
+                    Assignment {
+                        id: Id(4),
+                        name: "a".into(),
+                        value: Expression::Identifier(Id(3)),
+                    },
+                    // g(<anonymous function argument>)
+                    Assignment {
+                        id: Id(5),
+                        name: "<anonymous function plot>".into(),
+                        value: Expression::Identifier(Id(4)),
+                    },
+                    // with b = 2
+                    Assignment {
+                        id: Id(6),
+                        name: "b".into(),
+                        value: Expression::Number(2.0),
+                    },
+                    // b = 1
+                    Assignment {
+                        id: Id(7),
+                        name: "b".into(),
+                        value: Expression::Number(1.0),
+                    },
+                    // a = b
+                    Assignment {
+                        id: Id(8),
+                        name: "a".into(),
+                        value: Expression::Identifier(Id(7)),
+                    },
+                    // g(1) with b=2
+                    Assignment {
+                        id: Id(9),
+                        name: "<anonymous>".into(),
+                        value: Expression::Identifier(Id(8)),
+                    },
+                ],
+                vec![
+                    ExpressionResult::Plot {
+                        allowed_kinds: PlotKinds::NORMAL,
+                        value: Id(2),
+                        parameters: vec![Id(0)],
+                        domain: None,
+                    },
+                    ExpressionResult::Plot {
+                        allowed_kinds: PlotKinds::NORMAL,
+                        value: Id(5),
+                        parameters: vec![Id(0)],
+                        domain: None,
+                    },
+                    ExpressionResult::Value(Id(9)),
+                ],
+                HashMap::from([("<anonymous function argument>".into(), Id(0))]),
             ),
         );
     }
