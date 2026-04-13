@@ -806,7 +806,7 @@ impl Display for NameError {
                     }
                 )
             }
-            NameError::BadPointDimension => write!(f, "points may only have 2 coordinates"),
+            NameError::BadPointDimension => write!(f, "points may only have 2 or 3 coordinates"),
             NameError::CyclicDefinition(names) => match &names[..] {
                 [] => write!(f, "[internal] cyclic definition with no names"),
                 [a] => write!(f, "'{a}' can't be defined in terms of itself"),
