@@ -16,7 +16,8 @@ use crate::{
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BaseType {
     Number,
-    Point,
+    Point2,
+    Point3,
     Polygon,
     Bool,
     Empty,
@@ -26,8 +27,10 @@ pub enum BaseType {
 pub enum Type {
     Number,
     NumberList,
-    Point,
-    PointList,
+    Point2,
+    Point2List,
+    Point3,
+    Point3List,
     Polygon,
     PolygonList,
     Bool,
@@ -39,7 +42,8 @@ impl Type {
     pub const fn base(self) -> BaseType {
         match self {
             Type::Number | Type::NumberList => BaseType::Number,
-            Type::Point | Type::PointList => BaseType::Point,
+            Type::Point2 | Type::Point2List => BaseType::Point2,
+            Type::Point3 | Type::Point3List => BaseType::Point3,
             Type::Polygon | Type::PolygonList => BaseType::Polygon,
             Type::Bool | Type::BoolList => BaseType::Bool,
             Type::EmptyList => BaseType::Empty,
@@ -65,7 +69,8 @@ impl Type {
     pub const fn list_of(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::NumberList,
-            BaseType::Point => Type::PointList,
+            BaseType::Point2 => Type::Point2List,
+            BaseType::Point3 => Type::Point3List,
             BaseType::Polygon => Type::PolygonList,
             BaseType::Bool => Type::BoolList,
             BaseType::Empty => Type::EmptyList,
@@ -75,7 +80,8 @@ impl Type {
     pub const fn single(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::Number,
-            BaseType::Point => Type::Point,
+            BaseType::Point2 => Type::Point2,
+            BaseType::Point3 => Type::Point3,
             BaseType::Polygon => Type::Polygon,
             BaseType::Bool => Type::Bool,
             BaseType::Empty => Type::Number,
@@ -86,7 +92,8 @@ impl Type {
         matches!(
             self,
             Type::NumberList
-                | Type::PointList
+                | Type::Point2List
+                | Type::Point3List
                 | Type::PolygonList
                 | Type::BoolList
                 | Type::EmptyList
@@ -99,8 +106,10 @@ impl std::fmt::Display for Type {
         f.write_str(match self {
             Type::Number => "a number",
             Type::NumberList => "a list of numbers",
-            Type::Point => "a point",
-            Type::PointList => "a list of points",
+            Type::Point2 => "a point",
+            Type::Point2List => "a list of points",
+            Type::Point3 => "a 3D point",
+            Type::Point3List => "a list of 3D points",
             Type::Polygon => "a polygon",
             Type::PolygonList => "a list of polygons",
             Type::Bool => "a true/false value",
@@ -429,19 +438,30 @@ impl TypeChecker {
                     .transpose()?
                     .unwrap_or_else(|| match c.ty.base() {
                         B::Number => te(Type::Number, Expression::Number(f64::NAN)),
-                        B::Point => te(
-                            Type::Point,
+                        B::Point2 => te(
+                            Type::Point2,
                             binary(
-                                Op::Point,
+                                Op::Point2,
                                 te(Type::Number, Expression::Number(f64::NAN)),
                                 te(Type::Number, Expression::Number(f64::NAN)),
                             ),
+                        ),
+                        B::Point3 => te(
+                            Type::Point3,
+                            Expression::Op {
+                                operation: Op::Point3,
+                                args: vec![
+                                    te(Type::Number, Expression::Number(f64::NAN)),
+                                    te(Type::Number, Expression::Number(f64::NAN)),
+                                    te(Type::Number, Expression::Number(f64::NAN)),
+                                ],
+                            },
                         ),
                         B::Polygon => te(
                             Type::Polygon,
                             Expression::Op {
                                 operation: Op::Polygon,
-                                args: vec![te(Type::PointList, Expression::List(vec![]))],
+                                args: vec![te(Type::Point2List, Expression::List(vec![]))],
                             },
                         ),
                         B::Bool => te(
@@ -565,7 +585,8 @@ impl TypeChecker {
                             Expression::Op {
                                 operation: match ty.base() {
                                     B::Number => Op::JoinNumber,
-                                    B::Point => Op::JoinPoint,
+                                    B::Point2 => Op::JoinPoint2,
+                                    B::Point3 => Op::JoinPoint3,
                                     B::Polygon => Op::JoinPolygon,
                                     _ => unreachable!(),
                                 },
@@ -591,7 +612,7 @@ impl TypeChecker {
                                     Type::Polygon,
                                     Expression::Op {
                                         operation: Op::Polygon,
-                                        args: vec![te(Type::PointList, Expression::List(vec![]))],
+                                        args: vec![te(Type::Point2List, Expression::List(vec![]))],
                                     },
                                 ));
                             } else {
@@ -600,9 +621,9 @@ impl TypeChecker {
                                 let x = self.create_assignment(x);
                                 let y = self.create_assignment(y);
                                 let body = Box::new(te(
-                                    Type::Point,
+                                    Type::Point2,
                                     binary(
-                                        Op::Point,
+                                        Op::Point2,
                                         te(Type::Number, Expression::Identifier(x.id)),
                                         te(Type::Number, Expression::Identifier(y.id)),
                                     ),
@@ -618,7 +639,7 @@ impl TypeChecker {
                                     Expression::Op {
                                         operation: Op::Polygon,
                                         args: vec![te(
-                                            Type::PointList,
+                                            Type::Point2List,
                                             Expression::Broadcast {
                                                 scalars,
                                                 vectors,
@@ -633,7 +654,7 @@ impl TypeChecker {
                                 Type::Polygon,
                                 Expression::Op {
                                     operation: Op::Polygon,
-                                    args: vec![te(Type::PointList, Expression::List(vec![]))],
+                                    args: vec![te(Type::Point2List, Expression::List(vec![]))],
                                 },
                             ));
                         }
@@ -660,10 +681,13 @@ impl TypeChecker {
                         }
                     }
                     // canonicalize (Point, Number) order for MulNumberPoint
-                    name if name.overloads().contains(&Op::MulNumberPoint) => {
+                    name if name.overloads().contains(&Op::MulNumberPoint2)
+                        || name.overloads().contains(&Op::MulNumberPoint3) =>
+                    {
                         if checked_args.len() == 2
                             && let Some([a, b]) = checked_args.first_chunk_mut()
-                            && [a.ty.base(), b.ty.base()] == [B::Point, B::Number]
+                            && [B::Point2, B::Point3].contains(&a.ty.base())
+                            && b.ty.base() == B::Number
                         {
                             mem::swap(a, b);
                         }
@@ -695,7 +719,7 @@ impl TypeChecker {
                     OpName::Polygon
                         if checked_args.len() == 1 && checked_args[0].ty == Type::EmptyList =>
                     {
-                        checked_args[0].ty = Type::PointList;
+                        checked_args[0].ty = Type::Point2List;
                     }
                     OpName::Repeat if checked_args.len() == 2 => {
                         if checked_args[1].ty == Type::EmptyList {
@@ -952,7 +976,7 @@ mod tests {
     }
 
     fn pt(e: Expression) -> TypedExpression {
-        te(Type::Point, e)
+        te(Type::Point2, e)
     }
 
     #[test]
@@ -1012,13 +1036,13 @@ mod tests {
                     As {
                         id: Id(2),
                         name: "b".into(),
-                        value: pt(binary(Op::Point, num(Num(3.0)), num(Num(2.0))))
+                        value: pt(binary(Op::Point2, num(Num(3.0)), num(Num(2.0))))
                     },
                     As {
                         id: Id(3),
                         name: "c".into(),
                         value: pt(binary(
-                            Op::MulNumberPoint,
+                            Op::MulNumberPoint2,
                             num(Ident(Id(0))),
                             pt(Ident(Id(2)))
                         ))
@@ -1031,20 +1055,20 @@ mod tests {
                 ],
                 HashMap::from([
                     (Id(0), Ok(Type::Number)),
-                    (Id(2), Ok(Type::Point)),
-                    (Id(3), Ok(Type::Point)),
+                    (Id(2), Ok(Type::Point2)),
+                    (Id(3), Ok(Type::Point2)),
                     (
                         Id(88),
                         Err(TypeError::OpError(OpError::NoOverload(
                             OpName::Add,
-                            vec![Type::Point, Type::Number]
+                            vec![Type::Point2, Type::Number]
                         )))
                     ),
                     (
                         Id(89),
                         Err(TypeError::OpError(OpError::NoOverload(
                             OpName::Add,
-                            vec![Type::Point, Type::Number]
+                            vec![Type::Point2, Type::Number]
                         )))
                     ),
                     (Id(999), Ok(Type::Number)),

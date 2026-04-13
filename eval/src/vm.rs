@@ -1,3 +1,4 @@
+use core::f64;
 use std::{
     cell::RefCell,
     collections::HashSet,
@@ -22,8 +23,10 @@ pub enum Instruction {
     LoadConst(f64),
     Load(VarIndex),
     Load2(VarIndex),
+    Load3(VarIndex),
     Store(VarIndex),
     Store2(VarIndex),
+    Store3(VarIndex),
     LoadStore(VarIndex),
     Load1Store2(VarIndex),
     Load2Store1(VarIndex),
@@ -31,21 +34,30 @@ pub enum Instruction {
     Copy(usize),
     Swap(usize),
     Swap2(usize),
+    Swap3(usize),
     Pop(usize),
 
     Neg,
     Neg2,
+    Neg3,
     Add,
     Add2,
+    Add3,
     Sub,
     Sub2,
+    Sub3,
     Mul,
     Mul1_2,
+    Mul1_3,
     Div,
     Div2_1,
+    Div3_1,
     Pow,
-    Dot,
-    Point,
+    Dot2,
+    Dot3,
+    Cross,
+    Point2,
+    Point3,
 
     Equal,
     LessThan,
@@ -53,9 +65,13 @@ pub enum Instruction {
     GreaterThan,
     GreaterThanEqual,
 
-    PointX,
-    PointY,
-    Hypot,
+    Point2X,
+    Point2Y,
+    Point3X,
+    Point3Y,
+    Point3Z,
+    Hypot2,
+    Hypot3,
     Sqrt,
 
     Ln,
@@ -93,8 +109,10 @@ pub enum Instruction {
     Floor,
     Ceil,
     Mod,
-    Midpoint,
-    Distance,
+    Midpoint2,
+    Midpoint3,
+    Distance2,
+    Distance3,
     Min,
     Max,
     Median,
@@ -102,51 +120,65 @@ pub enum Instruction {
     Argmax,
     Total,
     Total2,
+    Total3,
     Mean,
     Mean2,
+    Mean3,
     Count,
     Count2,
+    Count3,
     CountPolygonList,
     Repeat,
     Repeat2,
+    Repeat3,
     RepeatPolygon,
     RepeatList,
     Repeat2List,
+    Repeat3List,
     RepeatPolygonList,
     Unique,
     Unique2,
+    Unique3,
     UniquePolygon,
     UniquePerm,
     UniquePerm2,
+    UniquePerm3,
     UniquePermPolygon,
     Sort,
     SortKey,
     SortKey2,
+    SortKey3,
     SortKeyPolygon,
     SortPerm,
     Polygon,
     Push,
     Push2,
+    Push3,
     PushPolygon,
     Concat,
     Concat2,
+    Concat3,
     ConcatPolygon,
 
     MinInternal,
     Index,
     Index2,
+    Index3,
     IndexPolygonList,
     UncheckedIndex(usize),
     UncheckedIndex2(usize),
+    UncheckedIndex3(usize),
     UncheckedIndexPolygonList(usize),
     BuildList(usize),
     BuildPolygonList(usize),
     BuildListFromRange,
     Append(usize),
     Append2(usize),
+    Append3(usize),
     AppendPolygonList(usize),
     CountSpecific(usize),
     CountSpecific2(usize),
+    CountSpecific3(usize),
     CountSpecificPolygonList(usize),
 
     StartArgs,
@@ -250,6 +282,20 @@ fn sort_perm(list: &[f64]) -> Vec<usize> {
     indices
 }
 
+fn hypot3(x: f64, y: f64, z: f64) -> f64 {
+    let max = x.abs().max(y.abs()).max(z.abs());
+
+    if max == 0.0 {
+        return if x.is_nan() || y.is_nan() || z.is_nan() {
+            f64::NAN
+        } else {
+            0.0
+        };
+    }
+
+    max * ((x / max).powi(2) + (y / max).powi(2) + (z / max).powi(2)).sqrt()
+}
+
 #[derive(Debug, Copy, Clone, From, Into, PartialEq, Add)]
 pub struct VarIndex(pub usize);
 pub type Vars = TiVec<VarIndex, Value>;
@@ -272,6 +318,7 @@ impl<'a, 'i> Vm<'a, 'i> {
             .map(|i| match i {
                 Instruction::Load(j) | Instruction::Store(j) => j.0 + 1,
                 Instruction::Load2(j) | Instruction::Store2(j) => j.0 + 2,
+                Instruction::Load3(j) | Instruction::Store3(j) => j.0 + 3,
                 _ => 0,
             })
             .max()
@@ -378,8 +425,18 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(self.load(index));
                     self.push(self.load(index + 1.into()));
                 }
+                Instruction::Load3(index) => {
+                    self.push(self.load(index));
+                    self.push(self.load(index + 1.into()));
+                    self.push(self.load(index + 2.into()));
+                }
                 Instruction::Store(index) => self.vars[index] = self.pop(),
                 Instruction::Store2(index) => {
+                    self.vars[index + 1.into()] = self.pop();
+                    self.vars[index] = self.pop();
+                }
+                Instruction::Store3(index) => {
+                    self.vars[index + 2.into()] = self.pop();
                     self.vars[index + 1.into()] = self.pop();
                     self.vars[index] = self.pop();
                 }
@@ -411,6 +468,12 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.stack.swap(a - 2, a - index);
                     self.stack.swap(a - 1, a - index + 1);
                 }
+                Instruction::Swap3(index) => {
+                    let a = self.stack.len();
+                    self.stack.swap(a - 3, a - index);
+                    self.stack.swap(a - 2, a - index + 1);
+                    self.stack.swap(a - 1, a - index + 2);
+                }
                 Instruction::Pop(count) => {
                     for _ in 0..count {
                         self.stack.pop();
@@ -427,6 +490,14 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(-x);
                     self.push(-y);
                 }
+                Instruction::Neg3 => {
+                    let z = self.pop().number();
+                    let y = self.pop().number();
+                    let x = self.pop().number();
+                    self.push(-x);
+                    self.push(-y);
+                    self.push(-z);
+                }
                 Instruction::Add => {
                     let b = self.pop().number();
                     let a = self.pop().number();
@@ -439,6 +510,17 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let ax = self.pop().number();
                     self.push(ax + bx);
                     self.push(ay + by);
+                }
+                Instruction::Add3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ax + bx);
+                    self.push(ay + by);
+                    self.push(az + bz);
                 }
                 Instruction::Sub => {
                     let b = self.pop().number();
@@ -453,6 +535,17 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(ax - bx);
                     self.push(ay - by);
                 }
+                Instruction::Sub3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ax - bx);
+                    self.push(ay - by);
+                    self.push(az - bz);
+                }
                 Instruction::Mul => {
                     let b = self.pop().number();
                     let a = self.pop().number();
@@ -464,6 +557,15 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let a = self.pop().number();
                     self.push(a * bx);
                     self.push(a * by);
+                }
+                Instruction::Mul1_3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let a = self.pop().number();
+                    self.push(a * bx);
+                    self.push(a * by);
+                    self.push(a * bz);
                 }
                 Instruction::Div => {
                     let b = self.pop().number();
@@ -477,19 +579,51 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(ax / b);
                     self.push(ay / b);
                 }
+                Instruction::Div3_1 => {
+                    let b = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ax / b);
+                    self.push(ay / b);
+                    self.push(az / b);
+                }
                 Instruction::Pow => {
                     let b = self.pop().number();
                     let a = self.pop().number();
                     self.push(a.powf(b));
                 }
-                Instruction::Dot => {
+                Instruction::Dot2 => {
                     let by = self.pop().number();
                     let bx = self.pop().number();
                     let ay = self.pop().number();
                     let ax = self.pop().number();
                     self.push(ax * bx + ay * by);
                 }
-                Instruction::Point => {
+                Instruction::Dot3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ax * bx + ay * by + az * bz);
+                }
+                Instruction::Cross => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ay * bz - az * by);
+                    self.push(az * bx - ax * bz);
+                    self.push(ax * by - ay * bx);
+                }
+                Instruction::Point2 => {
+                    // noop
+                }
+                Instruction::Point3 => {
                     // noop
                 }
 
@@ -519,18 +653,40 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(if a >= b { 1.0 } else { 0.0 });
                 }
 
-                Instruction::PointX => {
-                    self.pop().number();
+                Instruction::Point2X => {
+                    let _y = self.pop().number();
                 }
-                Instruction::PointY => {
+                Instruction::Point2Y => {
                     let y = self.pop().number();
-                    self.pop().number();
+                    let _x = self.pop().number();
                     self.push(y);
                 }
-                Instruction::Hypot => {
+                Instruction::Point3X => {
+                    let _z = self.pop().number();
+                    let _y = self.pop().number();
+                }
+                Instruction::Point3Y => {
+                    let _z = self.pop().number();
+                    let y = self.pop().number();
+                    let _x = self.pop().number();
+                    self.push(y);
+                }
+                Instruction::Point3Z => {
+                    let z = self.pop().number();
+                    let _y = self.pop().number();
+                    let _x = self.pop().number();
+                    self.push(z);
+                }
+                Instruction::Hypot2 => {
                     let y = self.pop().number();
                     let x = self.pop().number();
                     self.push(x.hypot(y));
+                }
+                Instruction::Hypot3 => {
+                    let z = self.pop().number();
+                    let y = self.pop().number();
+                    let x = self.pop().number();
+                    self.push(hypot3(x, y, z));
                 }
                 Instruction::Sqrt => {
                     let a = self.pop().number();
@@ -686,7 +842,7 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let a = self.pop().number();
                     self.push(a - (a / b).floor() * b);
                 }
-                Instruction::Midpoint => {
+                Instruction::Midpoint2 => {
                     let by = self.pop().number();
                     let bx = self.pop().number();
                     let ay = self.pop().number();
@@ -694,12 +850,32 @@ impl<'a, 'i> Vm<'a, 'i> {
                     self.push(ax.midpoint(bx));
                     self.push(ay.midpoint(by));
                 }
-                Instruction::Distance => {
+                Instruction::Midpoint3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(ax.midpoint(bx));
+                    self.push(ay.midpoint(by));
+                    self.push(az.midpoint(bz));
+                }
+                Instruction::Distance2 => {
                     let by = self.pop().number();
                     let bx = self.pop().number();
                     let ay = self.pop().number();
                     let ax = self.pop().number();
                     self.push((bx - ax).hypot(by - ay));
+                }
+                Instruction::Distance3 => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let az = self.pop().number();
+                    let ay = self.pop().number();
+                    let ax = self.pop().number();
+                    self.push(hypot3(bx - ax, by - ay, bz - az));
                 }
                 Instruction::Min => {
                     let a = self.pop().list();
@@ -786,12 +962,26 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let a = self.pop().list();
                     let (x, y) = a
                         .borrow()
-                        .as_chunks::<2>()
+                        .as_chunks()
                         .0
                         .iter()
-                        .fold((0.0, 0.0), |(x, y), p| (x + p[0], y + p[1]));
+                        .fold((0.0, 0.0), |(x, y), [u, v]| (x + u, y + v));
                     self.push(x);
                     self.push(y);
+                }
+                Instruction::Total3 => {
+                    let a = self.pop().list();
+                    let (x, y, z) = a
+                        .borrow()
+                        .as_chunks()
+                        .0
+                        .iter()
+                        .fold((0.0, 0.0, 0.0), |(x, y, z), [u, v, w]| {
+                            (x + u, y + v, z + w)
+                        });
+                    self.push(x);
+                    self.push(y);
+                    self.push(z);
                 }
                 Instruction::Mean => {
                     let a = self.pop().list();
@@ -802,12 +992,26 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let a = self.pop().list();
                     let a = a.borrow();
                     let (x, y) = a
-                        .as_chunks::<2>()
+                        .as_chunks()
                         .0
                         .iter()
-                        .fold((0.0, 0.0), |(x, y), p| (x + p[0], y + p[1]));
+                        .fold((0.0, 0.0), |(x, y), [u, v]| (x + u, y + v));
                     self.push(x / a.len() as f64);
                     self.push(y / a.len() as f64);
+                }
+                Instruction::Mean3 => {
+                    let a = self.pop().list();
+                    let a = a.borrow();
+                    let (x, y, z) = a
+                        .as_chunks()
+                        .0
+                        .iter()
+                        .fold((0.0, 0.0, 0.0), |(x, y, z), [u, v, w]| {
+                            (x + u, y + v, z + w)
+                        });
+                    self.push(x / a.len() as f64);
+                    self.push(y / a.len() as f64);
+                    self.push(z / a.len() as f64);
                 }
                 Instruction::Count => {
                     let a = self.pop().list();
@@ -816,6 +1020,10 @@ impl<'a, 'i> Vm<'a, 'i> {
                 Instruction::Count2 => {
                     let a = self.pop().list();
                     self.push(a.borrow().len() as f64 / 2.0);
+                }
+                Instruction::Count3 => {
+                    let a = self.pop().list();
+                    self.push(a.borrow().len() as f64 / 3.0);
                 }
                 Instruction::CountPolygonList => {
                     let a = self.pop().polygon_list();
@@ -831,6 +1039,13 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let y = self.pop().number();
                     let x = self.pop().number();
                     self.push(Rc::new(RefCell::new([x, y].repeat(count))));
+                }
+                Instruction::Repeat3 => {
+                    let count = self.pop().number().round().max(0.0) as usize;
+                    let z = self.pop().number();
+                    let y = self.pop().number();
+                    let x = self.pop().number();
+                    self.push(Rc::new(RefCell::new([x, y, z].repeat(count))));
                 }
                 Instruction::RepeatPolygon => {
                     let count = self.pop().number().round().max(0.0) as usize;
@@ -870,6 +1085,25 @@ impl<'a, 'i> Vm<'a, 'i> {
 
                     self.push(Rc::new(RefCell::new(list)));
                 }
+                Instruction::Repeat3List => {
+                    let counts = self.pop().list();
+                    let counts = counts.borrow();
+                    let values = self.pop().list();
+                    let values = values.borrow();
+                    let mut list = vec![];
+
+                    for (&[x, y, z], &count) in zip(values.as_chunks().0, counts.iter()) {
+                        let count = count.round().max(0.0) as usize;
+                        list.reserve(count * 3);
+                        for _ in 0..count {
+                            list.push(x);
+                            list.push(y);
+                            list.push(z);
+                        }
+                    }
+
+                    self.push(Rc::new(RefCell::new(list)));
+                }
                 Instruction::RepeatPolygonList => {
                     let counts = self.pop().list();
                     let counts = counts.borrow();
@@ -904,7 +1138,21 @@ impl<'a, 'i> Vm<'a, 'i> {
                             .0
                             .iter()
                             .cloned()
-                            .filter(|&[x, y]| seen.insert((OrderedFloat(x), OrderedFloat(y))))
+                            .filter(|&p| seen.insert(p.map(OrderedFloat)))
+                            .flatten()
+                            .collect::<Vec<_>>(),
+                    )));
+                }
+                Instruction::Unique3 => {
+                    let a = self.pop().list();
+                    let mut seen = HashSet::new();
+                    self.push(Rc::new(RefCell::new(
+                        a.borrow()
+                            .as_chunks::<3>()
+                            .0
+                            .iter()
+                            .cloned()
+                            .filter(|&p| seen.insert(p.map(OrderedFloat)))
                             .flatten()
                             .collect::<Vec<_>>(),
                     )));
@@ -947,9 +1195,23 @@ impl<'a, 'i> Vm<'a, 'i> {
                             .0
                             .iter()
                             .enumerate()
-                            .filter_map(|(i, &[x, y])| {
-                                seen.insert((OrderedFloat(x), OrderedFloat(y)))
-                                    .then_some(i as f64)
+                            .filter_map(|(i, &p)| {
+                                seen.insert(p.map(OrderedFloat)).then_some(i as f64)
+                            })
+                            .collect::<Vec<_>>(),
+                    )));
+                }
+                Instruction::UniquePerm3 => {
+                    let a = self.pop().list();
+                    let mut seen = HashSet::new();
+                    self.push(Rc::new(RefCell::new(
+                        a.borrow()
+                            .as_chunks::<3>()
+                            .0
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, &p)| {
+                                seen.insert(p.map(OrderedFloat)).then_some(i as f64)
                             })
                             .collect::<Vec<_>>(),
                     )));
@@ -995,9 +1257,21 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let list = self.pop().list();
                     let list = list.borrow();
                     self.push(Rc::new(RefCell::new(
-                        sort_perm(&key[..key.len().min(list.len())])
+                        sort_perm(&key[..key.len().min(list.len() / 2)])
                             .iter()
                             .flat_map(|&i| [list[2 * i], list[2 * i + 1]])
+                            .collect::<Vec<_>>(),
+                    )));
+                }
+                Instruction::SortKey3 => {
+                    let key = self.pop().list();
+                    let key = key.borrow();
+                    let list = self.pop().list();
+                    let list = list.borrow();
+                    self.push(Rc::new(RefCell::new(
+                        sort_perm(&key[..key.len().min(list.len() / 3)])
+                            .iter()
+                            .flat_map(|&i| [list[3 * i], list[3 * i + 1], list[3 * i + 2]])
                             .collect::<Vec<_>>(),
                     )));
                 }
@@ -1039,13 +1313,21 @@ impl<'a, 'i> Vm<'a, 'i> {
                     a.borrow_mut().extend([x, y]);
                     self.push(Rc::new(a));
                 }
+                Instruction::Push3 => {
+                    let z = self.pop().number();
+                    let y = self.pop().number();
+                    let x = self.pop().number();
+                    let a = Rc::unwrap_or_clone(self.pop().list());
+                    a.borrow_mut().extend([x, y, z]);
+                    self.push(Rc::new(a));
+                }
                 Instruction::PushPolygon => {
                     let b = self.pop().list();
                     let a = Rc::unwrap_or_clone(self.pop().polygon_list());
                     a.borrow_mut().push(b);
                     self.push(Rc::new(a));
                 }
-                Instruction::Concat | Instruction::Concat2 => {
+                Instruction::Concat | Instruction::Concat2 | Instruction::Concat3 => {
                     let b = self.pop().list();
                     let a = Rc::unwrap_or_clone(self.pop().list());
                     a.borrow_mut().extend_from_slice(&b.borrow());
@@ -1087,6 +1369,21 @@ impl<'a, 'i> Vm<'a, 'i> {
                         self.push(f64::NAN);
                     }
                 }
+                Instruction::Index3 => {
+                    let b = (self.pop().number().floor() - 1.0) * 3.0;
+                    let a = self.pop().list();
+                    let a = a.borrow();
+
+                    if 0.0 <= b && b < a.len() as f64 {
+                        self.push(a[b as usize]);
+                        self.push(a[b as usize + 1]);
+                        self.push(a[b as usize + 2]);
+                    } else {
+                        self.push(f64::NAN);
+                        self.push(f64::NAN);
+                        self.push(f64::NAN);
+                    }
+                }
                 Instruction::IndexPolygonList => {
                     let b = self.pop().number().floor() - 1.0;
                     let a = self.pop().polygon_list();
@@ -1109,6 +1406,14 @@ impl<'a, 'i> Vm<'a, 'i> {
                     let a = a.borrow();
                     self.push(a[b]);
                     self.push(a[b + 1]);
+                }
+                Instruction::UncheckedIndex3(index) => {
+                    let b = self.pop().number() as usize * 3;
+                    let a = self.peek(index).list();
+                    let a = a.borrow();
+                    self.push(a[b]);
+                    self.push(a[b + 1]);
+                    self.push(a[b + 2]);
                 }
                 Instruction::UncheckedIndexPolygonList(index) => {
                     let b = self.pop().number() as usize;
@@ -1156,6 +1461,16 @@ impl<'a, 'i> Vm<'a, 'i> {
                     a.push(bx);
                     a.push(by);
                 }
+                Instruction::Append3(index) => {
+                    let bz = self.pop().number();
+                    let by = self.pop().number();
+                    let bx = self.pop().number();
+                    let a = self.peek(index).clone().list();
+                    let mut a = a.borrow_mut();
+                    a.push(bx);
+                    a.push(by);
+                    a.push(bz);
+                }
                 Instruction::AppendPolygonList(index) => {
                     let a = self.pop().list();
                     self.peek(index).clone().polygon_list().borrow_mut().push(a);
@@ -1167,6 +1482,10 @@ impl<'a, 'i> Vm<'a, 'i> {
                 Instruction::CountSpecific2(index) => {
                     let a = self.peek(index).list();
                     self.push(a.borrow().len() as f64 / 2.0);
+                }
+                Instruction::CountSpecific3(index) => {
+                    let a = self.peek(index).list();
+                    self.push(a.borrow().len() as f64 / 3.0);
                 }
                 Instruction::CountSpecificPolygonList(index) => {
                     let a = self.peek(index).polygon_list();

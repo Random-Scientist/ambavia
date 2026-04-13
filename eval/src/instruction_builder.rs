@@ -10,7 +10,8 @@ use crate::vm::{
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BaseType {
     Number,
-    Point,
+    Point2,
+    Point3,
     Polygon,
     Bool,
 }
@@ -19,8 +20,10 @@ pub enum BaseType {
 pub enum Type {
     Number,
     NumberList,
-    Point,
-    PointList,
+    Point2,
+    Point2List,
+    Point3,
+    Point3List,
     Polygon,
     PolygonList,
     Bool,
@@ -32,19 +35,22 @@ impl Type {
         match self {
             Type::Number
             | Type::NumberList
-            | Type::PointList
+            | Type::Point2List
+            | Type::Point3List
             | Type::Polygon
             | Type::PolygonList
             | Type::Bool
             | Type::BoolList => 1,
-            Type::Point => 2,
+            Type::Point2 => 2,
+            Type::Point3 => 3,
         }
     }
 
     fn base(&self) -> BaseType {
         match self {
             Type::Number | Type::NumberList => BaseType::Number,
-            Type::Point | Type::PointList => BaseType::Point,
+            Type::Point2 | Type::Point2List => BaseType::Point2,
+            Type::Point3 | Type::Point3List => BaseType::Point3,
             Type::Polygon | Type::PolygonList => BaseType::Polygon,
             Type::Bool | Type::BoolList => BaseType::Bool,
         }
@@ -53,7 +59,8 @@ impl Type {
     fn list_of(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::NumberList,
-            BaseType::Point => Type::PointList,
+            BaseType::Point2 => Type::Point2List,
+            BaseType::Point3 => Type::Point3List,
             BaseType::Polygon => Type::PolygonList,
             BaseType::Bool => Type::BoolList,
         }
@@ -62,7 +69,8 @@ impl Type {
     fn single(base: BaseType) -> Type {
         match base {
             BaseType::Number => Type::Number,
-            BaseType::Point => Type::Point,
+            BaseType::Point2 => Type::Point2,
+            BaseType::Point3 => Type::Point3,
             BaseType::Polygon => Type::Polygon,
             BaseType::Bool => Type::Bool,
         }
@@ -71,7 +79,11 @@ impl Type {
     fn is_list(&self) -> bool {
         matches!(
             self,
-            Type::NumberList | Type::PointList | Type::PolygonList | Type::BoolList
+            Type::NumberList
+                | Type::Point2List
+                | Type::Point3List
+                | Type::PolygonList
+                | Type::BoolList
         )
     }
 }
@@ -81,8 +93,10 @@ impl std::fmt::Display for Type {
         f.write_str(match self {
             Type::Number => "a number",
             Type::NumberList => "a list of numbers",
-            Type::Point => "a point",
-            Type::PointList => "a list of points",
+            Type::Point2 => "a point",
+            Type::Point2List => "a list of points",
+            Type::Point3 => "a 3D point",
+            Type::Point3List => "a list of 3D points",
             Type::Polygon => "a polygon",
             Type::PolygonList => "a list of polygons",
             Type::Bool => "a true/false value",
@@ -168,20 +182,26 @@ impl InstructionBuilder {
             | Acosh | Atanh | Asech | Acsch | Acoth | Abs | Sgn | Round | Floor | Ceil => {
                 (Type::Number, Type::Number)
             }
-            Neg2 => (Type::Point, Type::Point),
-            PointX | PointY | Hypot => (Type::Point, Type::Number),
+            Neg2 => (Type::Point2, Type::Point2),
+            Neg3 => (Type::Point3, Type::Point3),
+            Point2X | Point2Y | Hypot2 => (Type::Point2, Type::Number),
+            Point3X | Point3Y | Point3Z | Hypot3 => (Type::Point3, Type::Number),
             Min | Max | Median | Argmin | Argmax | Total | Mean | Count => {
                 (Type::NumberList, Type::Number)
             }
-            Total2 | Mean2 => (Type::PointList, Type::Point),
-            Count2 => (Type::PointList, Type::Number),
+            Total2 | Mean2 => (Type::Point2List, Type::Point2),
+            Total3 | Mean3 => (Type::Point3List, Type::Point3),
+            Count2 => (Type::Point2List, Type::Number),
+            Count3 => (Type::Point3List, Type::Number),
             CountPolygonList => (Type::PolygonList, Type::Number),
             Unique | UniquePerm | Sort | SortPerm => (Type::NumberList, Type::NumberList),
-            Unique2 => (Type::PointList, Type::PointList),
+            Unique2 => (Type::Point2List, Type::Point2List),
+            Unique3 => (Type::Point3List, Type::Point3List),
             UniquePolygon => (Type::PolygonList, Type::PolygonList),
-            UniquePerm2 => (Type::PointList, Type::NumberList),
+            UniquePerm2 => (Type::Point2List, Type::NumberList),
+            UniquePerm3 => (Type::Point3List, Type::NumberList),
             UniquePermPolygon => (Type::PolygonList, Type::NumberList),
-            Polygon => (Type::PointList, Type::Polygon),
+            Polygon => (Type::Point2List, Type::Polygon),
             _ => panic!("instruction '{instr:?}' not unary"),
         };
         self.assert_pop(a, a_type);
@@ -201,36 +221,62 @@ impl InstructionBuilder {
             Equal | LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => {
                 (Type::Number, Type::Number, Type::Bool)
             }
-            Add2 | Sub2 | Midpoint => (Type::Point, Type::Point, Type::Point),
-            Mul1_2 => (Type::Number, Type::Point, Type::Point),
-            Div2_1 => (Type::Point, Type::Number, Type::Point),
-            Dot | Distance => (Type::Point, Type::Point, Type::Number),
-            Point => (Type::Number, Type::Number, Type::Point),
+            Add2 | Sub2 | Midpoint2 => (Type::Point2, Type::Point2, Type::Point2),
+            Add3 | Sub3 | Midpoint3 | Cross => (Type::Point3, Type::Point3, Type::Point3),
+            Mul1_2 => (Type::Number, Type::Point2, Type::Point2),
+            Mul1_3 => (Type::Number, Type::Point3, Type::Point3),
+            Div2_1 => (Type::Point2, Type::Number, Type::Point2),
+            Div3_1 => (Type::Point3, Type::Number, Type::Point3),
+            Dot2 | Distance2 => (Type::Point2, Type::Point2, Type::Number),
+            Dot3 | Distance3 => (Type::Point3, Type::Point3, Type::Number),
+            Point2 => (Type::Number, Type::Number, Type::Point2),
             SortKey => (Type::NumberList, Type::NumberList, Type::NumberList),
-            SortKey2 => (Type::PointList, Type::NumberList, Type::PointList),
+            SortKey2 => (Type::Point2List, Type::NumberList, Type::Point2List),
+            SortKey3 => (Type::Point3List, Type::NumberList, Type::Point3List),
             SortKeyPolygon => (Type::PolygonList, Type::NumberList, Type::PolygonList),
             Push => (Type::NumberList, Type::Number, Type::NumberList),
-            Push2 => (Type::PointList, Type::Point, Type::PointList),
+            Push2 => (Type::Point2List, Type::Point2, Type::Point2List),
+            Push3 => (Type::Point3List, Type::Point3, Type::Point3List),
             PushPolygon => (Type::PolygonList, Type::Polygon, Type::PolygonList),
             Concat => (Type::NumberList, Type::NumberList, Type::NumberList),
-            Concat2 => (Type::PointList, Type::PointList, Type::PointList),
+            Concat2 => (Type::Point2List, Type::Point2List, Type::Point2List),
+            Concat3 => (Type::Point3List, Type::Point3List, Type::Point3List),
             ConcatPolygon => (Type::PolygonList, Type::PolygonList, Type::PolygonList),
             MinInternal => (Type::Number, Type::Number, Type::Number),
             Index => (Type::NumberList, Type::Number, Type::Number),
-            Index2 => (Type::PointList, Type::Number, Type::Point),
+            Index2 => (Type::Point2List, Type::Number, Type::Point2),
+            Index3 => (Type::Point3List, Type::Number, Type::Point3),
             IndexPolygonList => (Type::PolygonList, Type::Number, Type::Polygon),
             Repeat | BuildListFromRange => (Type::Number, Type::Number, Type::NumberList),
-            Repeat2 => (Type::Point, Type::Number, Type::PointList),
+            Repeat2 => (Type::Point2, Type::Number, Type::Point2List),
+            Repeat3 => (Type::Point3, Type::Number, Type::Point3List),
             RepeatPolygon => (Type::Polygon, Type::Number, Type::PolygonList),
             RepeatList => (Type::NumberList, Type::NumberList, Type::NumberList),
-            Repeat2List => (Type::PointList, Type::NumberList, Type::PointList),
+            Repeat2List => (Type::Point2List, Type::NumberList, Type::Point2List),
+            Repeat3List => (Type::Point3List, Type::NumberList, Type::Point3List),
             RepeatPolygonList => (Type::PolygonList, Type::NumberList, Type::PolygonList),
             _ => panic!("instruction '{instr:?}' not binary"),
         };
         self.assert_pop(b, b_type);
         self.assert_pop(a, a_type);
 
-        if instr != Point {
+        if instr != Point2 {
+            self.instructions.push(instr);
+        }
+
+        self.create_and_push_value(return_type)
+    }
+
+    pub fn instr3(&mut self, instr: Instruction, a: Value, b: Value, c: Value) -> Value {
+        let (a_type, b_type, c_type, return_type) = match instr {
+            Point3 => (Type::Number, Type::Number, Type::Number, Type::Point3),
+            _ => panic!("instruction '{instr:?}' not ternary"),
+        };
+        self.assert_pop(c, c_type);
+        self.assert_pop(b, b_type);
+        self.assert_pop(a, a_type);
+
+        if instr != Point3 {
             self.instructions.push(instr);
         }
 
@@ -250,7 +296,8 @@ impl InstructionBuilder {
         self.assert_pop(index, Type::Number);
         self.instructions.push(match base {
             BaseType::Number | BaseType::Bool => UncheckedIndex,
-            BaseType::Point => UncheckedIndex2,
+            BaseType::Point2 => UncheckedIndex2,
+            BaseType::Point3 => UncheckedIndex3,
             BaseType::Polygon => UncheckedIndexPolygonList,
         }(self.position_from_top(list)));
         self.create_and_push_value(Type::single(base))
@@ -263,7 +310,8 @@ impl InstructionBuilder {
         }
         self.instructions.push(match base {
             BaseType::Number | BaseType::Bool => BuildList(n),
-            BaseType::Point => BuildList(2 * n),
+            BaseType::Point2 => BuildList(2 * n),
+            BaseType::Point3 => BuildList(3 * n),
             BaseType::Polygon => BuildPolygonList(n),
         });
         self.create_and_push_value(Type::list_of(base))
@@ -276,7 +324,8 @@ impl InstructionBuilder {
         self.assert_pop(v, Type::single(base));
         self.instructions.push(match base {
             BaseType::Number | BaseType::Bool => Append,
-            BaseType::Point => Append2,
+            BaseType::Point2 => Append2,
+            BaseType::Point3 => Append3,
             BaseType::Polygon => AppendPolygonList,
         }(self.position_from_top(list)));
     }
@@ -289,13 +338,14 @@ impl InstructionBuilder {
             *index
         } else {
             let index = VarIndex(self.var_counter);
-            self.var_counter += 2;
+            self.var_counter += 3;
             self.vars.insert(name, (Some(ty), index));
             index
         };
         self.instructions.push(match ty.size() {
             1 => Store,
             2 => Store2,
+            3 => Store3,
             _ => unreachable!(),
         }(index));
     }
@@ -309,6 +359,7 @@ impl InstructionBuilder {
         self.instructions.push(match ty.size() {
             1 => Load,
             2 => Load2,
+            3 => Load3,
             _ => unreachable!(),
         }(*index));
         self.create_and_push_value(ty)
@@ -329,6 +380,7 @@ impl InstructionBuilder {
                 (1, 2) => Load1Store2,
                 (2, 1) => Load2Store1,
                 (2, 2) => Load2Store2,
+                (3, 1..=3) | (1 | 2, 3) => unimplemented!(),
                 _ => unreachable!(),
             }(*index));
         self.create_and_push_value(load_ty)
@@ -339,7 +391,7 @@ impl InstructionBuilder {
             *var_ty = Some(ty);
         } else {
             let index = VarIndex(self.var_counter);
-            self.var_counter += 2;
+            self.var_counter += 3;
             self.vars.insert(name, (Some(ty), index));
         }
     }
@@ -439,7 +491,8 @@ impl InstructionBuilder {
         assert!(list.ty.is_list());
         self.instructions.push(match list.ty.base() {
             BaseType::Number | BaseType::Bool => CountSpecific,
-            BaseType::Point => CountSpecific2,
+            BaseType::Point2 => CountSpecific2,
+            BaseType::Point3 => CountSpecific3,
             BaseType::Polygon => CountSpecificPolygonList,
         }(self.position_from_top(list)));
         self.create_and_push_value(Type::Number)
@@ -462,6 +515,7 @@ impl InstructionBuilder {
         self.instructions.push(match s.ty.size() {
             1 => Swap,
             2 => Swap2,
+            3 => Swap3,
             _ => unreachable!(),
         }(s.ty.size() + p_size));
         self.instructions.push(Pop(p_size));
@@ -590,7 +644,7 @@ mod tests {
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(5.0);
         let b = ib.load_const(7.0);
-        let c = ib.instr2(Point, a, b);
+        let c = ib.instr2(Point2, a, b);
         assert_eq!(ib.stack, [c]);
         assert_eq!(ib.finish(), [LoadConst(5.0), LoadConst(7.0)]);
     }
@@ -600,9 +654,9 @@ mod tests {
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(5.0);
         let b = ib.load_const(7.0);
-        let c = ib.instr2(Point, a, b);
+        let c = ib.instr2(Point2, a, b);
         let d = ib.load_const(7.0);
-        assert_panics(move || ib.instr2(Point, c, d));
+        assert_panics(move || ib.instr2(Point2, c, d));
     }
 
     #[test]
@@ -610,7 +664,7 @@ mod tests {
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(5.0);
         let b = ib.load_const(7.0);
-        let c = ib.instr2(Point, a, b);
+        let c = ib.instr2(Point2, a, b);
         let d = ib.load_const(7.0);
         assert_panics(move || ib.instr2(Add, c, d));
     }
@@ -620,10 +674,10 @@ mod tests {
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
-        let c = ib.instr2(Point, a, b);
+        let c = ib.instr2(Point2, a, b);
         let d = ib.load_const(3.0);
         let e = ib.load_const(4.0);
-        let f = ib.instr2(Point, d, e);
+        let f = ib.instr2(Point2, d, e);
         let g = ib.instr2(Add2, c, f);
         assert_eq!(ib.stack, [g]);
         assert_eq!(
@@ -694,7 +748,7 @@ mod tests {
         let c = ib.instr2(BuildListFromRange, a, b);
         let d = ib.load_const(3.0);
         let e = ib.load_const(4.0);
-        let de = ib.instr2(Point, d, e);
+        let de = ib.instr2(Point2, d, e);
         let f = ib.load_const(5.0);
         let g = ib.unchecked_index(&c, f);
         assert_eq!(
@@ -728,7 +782,7 @@ mod tests {
         let _c = ib.instr2(BuildListFromRange, a, b);
         let d = ib.load_const(3.0);
         let e = ib.load_const(4.0);
-        let de = ib.instr2(Point, d, e);
+        let de = ib.instr2(Point2, d, e);
         let f = ib.load_const(5.0);
         assert_panics(move || ib.unchecked_index(&de, f));
     }
@@ -760,17 +814,17 @@ mod tests {
         let _a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
         let c = ib.load_const(3.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         let e = ib.load_const(4.0);
         let f = ib.load_const(5.0);
-        let g = ib.instr2(Point, e, f);
-        let h = ib.build_list(BaseType::Point, vec![d, g]);
+        let g = ib.instr2(Point2, e, f);
+        let h = ib.build_list(BaseType::Point2, vec![d, g]);
         assert_eq!(
             h,
             Value {
                 name: 7,
                 index: 1,
-                ty: Type::PointList
+                ty: Type::Point2List
             }
         );
         assert_eq!(
@@ -798,7 +852,7 @@ mod tests {
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
         let c = ib.load_const(3.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         assert_panics(move || ib.build_list(BaseType::Number, vec![a, d]));
     }
 
@@ -807,12 +861,12 @@ mod tests {
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
-        let c = ib.instr2(Point, a, b);
+        let c = ib.instr2(Point2, a, b);
         let d = ib.build_list(BaseType::Number, vec![]);
-        let e = ib.build_list(BaseType::Point, vec![]);
+        let e = ib.build_list(BaseType::Point2, vec![]);
         let f = ib.load_const(3.0);
         let g = ib.load_const(4.0);
-        let h = ib.instr2(Point, f, g);
+        let h = ib.instr2(Point2, f, g);
         let i = ib.load_const(5.0);
         let j = ib.load_const(6.0);
         ib.append(&d, j);
@@ -874,13 +928,13 @@ mod tests {
         );
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         ib.store(Id(1), d);
         assert_eq!(
             ib.defined_vars_and_types(),
             HashMap::from([
                 (Id(0), (Type::Number, VarIndex(0))),
-                (Id(1), (Type::Point, VarIndex(2)))
+                (Id(1), (Type::Point2, VarIndex(3)))
             ])
         );
         assert_eq!(ib.stack, []);
@@ -899,30 +953,30 @@ mod tests {
             Value {
                 name: 5,
                 index: 1,
-                ty: Type::Point
+                ty: Type::Point2
             }
         );
         let old_a = ib.load_store(Id(0), d);
         assert_eq!(
             ib.defined_vars_and_types(),
             HashMap::from([
-                (Id(0), (Type::Point, VarIndex(0))),
-                (Id(1), (Type::Point, VarIndex(2)))
+                (Id(0), (Type::Point2, VarIndex(0))),
+                (Id(1), (Type::Point2, VarIndex(3)))
             ])
         );
         ib.undefine(Id(0));
         assert_eq!(
             ib.defined_vars_and_types(),
-            HashMap::from([(Id(1), (Type::Point, VarIndex(2)))])
+            HashMap::from([(Id(1), (Type::Point2, VarIndex(3)))])
         );
         assert_eq!(ib.stack, [a, old_a]);
-        let l = ib.build_list(BaseType::Point, vec![]);
+        let l = ib.build_list(BaseType::Point2, vec![]);
         ib.store(Id(0), l);
         assert_eq!(
             ib.defined_vars_and_types(),
             HashMap::from([
-                (Id(0), (Type::PointList, VarIndex(0))),
-                (Id(1), (Type::Point, VarIndex(2)))
+                (Id(0), (Type::Point2List, VarIndex(0))),
+                (Id(1), (Type::Point2, VarIndex(3)))
             ])
         );
         assert_eq!(
@@ -932,9 +986,9 @@ mod tests {
                 Store(VarIndex(0)),
                 LoadConst(1.0),
                 LoadConst(2.0),
-                Store2(VarIndex(2)),
+                Store2(VarIndex(3)),
                 Load(VarIndex(0)),
-                Load2(VarIndex(2)),
+                Load2(VarIndex(3)),
                 Load1Store2(VarIndex(0)),
                 BuildList(0),
                 Store(VarIndex(0)),
@@ -997,7 +1051,7 @@ mod tests {
         let jif = ib.jump_if_false(b_less_than_c);
         let d = ib.load_const(5.0);
         let e = ib.load_const(6.0);
-        let f = ib.instr2(Point, d, e);
+        let f = ib.instr2(Point2, d, e);
         let j = ib.jump(vec![f]);
         ib.set_jump_label(jif, &ib.label());
         let _d = ib.load_const(7.0);
@@ -1046,7 +1100,7 @@ mod tests {
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
         let c = ib.load_const(3.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         let a_copy = ib.copy(&a);
         let d_copy = ib.copy(&d);
         let d_copy2 = ib.copy(&d);
@@ -1072,7 +1126,7 @@ mod tests {
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
         let c = ib.load_const(3.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         ib.pop(d);
         ib.pop(a);
         assert_eq!(ib.stack, []);
@@ -1094,7 +1148,7 @@ mod tests {
         let a = ib.load_const(1.0);
         let b = ib.load_const(2.0);
         let c = ib.load_const(3.0);
-        let _d = ib.instr2(Point, b, c);
+        let _d = ib.instr2(Point2, b, c);
         assert_panics(move || ib.pop(a));
     }
 
@@ -1163,10 +1217,10 @@ mod tests {
     #[test]
     fn swap() {
         let mut ib = InstructionBuilder::default();
-        let mut a = ib.build_list(BaseType::Point, vec![]);
+        let mut a = ib.build_list(BaseType::Point2, vec![]);
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         let mut e = ib.load_const(3.0);
         ib.swap(&mut e, &mut a);
         assert_eq!(
@@ -1182,7 +1236,7 @@ mod tests {
             Value {
                 name: 0,
                 index: 2,
-                ty: Type::PointList
+                ty: Type::Point2List
             }
         );
         assert_eq!(ib.stack, [e, d, a]);
@@ -1201,34 +1255,34 @@ mod tests {
     #[test]
     fn error_swap() {
         let mut ib = InstructionBuilder::default();
-        let mut a = ib.build_list(BaseType::Point, vec![]);
+        let mut a = ib.build_list(BaseType::Point2, vec![]);
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let mut d = ib.instr2(Point, b, c);
+        let mut d = ib.instr2(Point2, b, c);
         let _e = ib.load_const(3.0);
         assert_panics(move || ib.swap(&mut d, &mut a));
 
         let mut ib = InstructionBuilder::default();
         let a = ib.load_const(1.0);
         let b = ib.load_const(1.0);
-        let mut c = ib.instr2(Point, a, b);
+        let mut c = ib.instr2(Point2, a, b);
         let d = ib.load_const(1.0);
         let e = ib.load_const(1.0);
-        let mut f = ib.instr2(Point, d, e);
+        let mut f = ib.instr2(Point2, d, e);
         assert_panics(move || ib.swap(&mut c, &mut f));
     }
 
     #[test]
     fn swap_pop() {
         let mut ib = InstructionBuilder::default();
-        let a = ib.build_list(BaseType::Point, vec![]);
+        let a = ib.build_list(BaseType::Point2, vec![]);
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         let e = ib.load_const(3.0);
         let f = ib.load_const(4.0);
         let g = ib.load_const(5.0);
-        let h = ib.instr2(Point, f, g);
+        let h = ib.instr2(Point2, f, g);
         let mut i = ib.build_list(BaseType::Number, vec![]);
         ib.swap_pop(&mut i, vec![d, e, h]);
         assert_eq!(
@@ -1259,22 +1313,22 @@ mod tests {
     #[test]
     fn error_swap_pop() {
         let mut ib = InstructionBuilder::default();
-        let _a = ib.build_list(BaseType::Point, vec![]);
+        let _a = ib.build_list(BaseType::Point2, vec![]);
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let d = ib.instr2(Point, b, c);
+        let d = ib.instr2(Point2, b, c);
         let _e = ib.load_const(3.0);
         let f = ib.load_const(4.0);
         let g = ib.load_const(5.0);
-        let h = ib.instr2(Point, f, g);
+        let h = ib.instr2(Point2, f, g);
         let mut i = ib.build_list(BaseType::Number, vec![]);
         assert_panics(move || ib.swap_pop(&mut i, vec![d, h]));
 
         let mut ib = InstructionBuilder::default();
-        let _a = ib.build_list(BaseType::Point, vec![]);
+        let _a = ib.build_list(BaseType::Point2, vec![]);
         let b = ib.load_const(1.0);
         let c = ib.load_const(2.0);
-        let _d = ib.instr2(Point, b, c);
+        let _d = ib.instr2(Point2, b, c);
         let e = ib.load_const(3.0);
         let mut f = ib.load_const(4.0);
         let _g = ib.load_const(5.0);

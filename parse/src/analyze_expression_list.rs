@@ -163,7 +163,7 @@ pub fn analyze_expression_list<'a>(
                             TypeError::CannotCompare(ty, ty),
                         ));
                     }
-                    Type::Point | Type::PointList => {
+                    Type::Point2 | Type::Point2List => {
                         if allowed_kinds.intersects(PlotKinds::PARAMETRIC) {
                             if ty.is_list() {
                                 return ExpressionResult::Err(AnalysisError::TodoListPlot);
@@ -191,7 +191,7 @@ pub fn analyze_expression_list<'a>(
                             return ExpressionResult::None;
                         }
                     }
-                    Type::Polygon | Type::PolygonList => {
+                    Type::Point3 | Type::Point3List | Type::Polygon | Type::PolygonList => {
                         return if allowed_kinds.contains(PlotKinds::PARAMETRIC) {
                             if parameters.is_empty() {
                                 // x = polygon([0,1,1],[0,0,1])

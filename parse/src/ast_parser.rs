@@ -500,12 +500,11 @@ fn parse_expression(tokens: &mut Tokens, min_bp: u8) -> Result<Expression, Strin
                     match list.len() {
                         0 => return Err("parentheses cannot be empty".into()),
                         1 => list.pop().unwrap(),
-                        2 => {
-                            let y = list.pop().unwrap();
-                            let x = list.pop().unwrap();
-                            binary(OpName::Point, x, y)
-                        }
-                        _ => return Err("points may only have 2 coordinates".into()),
+                        2 | 3 => Expression::Op {
+                            operation: OpName::Point,
+                            args: list,
+                        },
+                        _ => return Err("points may only have 2 or 3 coordinates".into()),
                     }
                 }
                 Token::LBracket => parse_list(tokens, false)?,
@@ -685,6 +684,7 @@ fn parse_expression(tokens: &mut Tokens, min_bp: u8) -> Result<Expression, Strin
                     left = match callee.as_str() {
                         "x" => unary(OpName::PointX, left),
                         "y" => unary(OpName::PointY, left),
+                        "z" => unary(OpName::PointZ, left),
                         _ => {
                             let mut args = vec![left];
                             if tokens.peek() == &Token::LParen {
@@ -1162,6 +1162,8 @@ mod tests {
             T::IdentFrag("c".into()),
             T::Comma,
             T::IdentFrag("pi".into()),
+            T::Comma,
+            T::IdentFrag("e".into()),
             T::RParen,
         ];
         let mut tokens = Tokens::new(&tokens, T::EndOfInput);
@@ -1173,7 +1175,10 @@ mod tests {
                 binary(
                     Mul,
                     Num(3.0),
-                    binary(Point, Id("c".into()), Id("pi".into()))
+                    Expression::Op {
+                        operation: Point,
+                        args: vec![Id("c".into()), Id("pi".into()), Id("e".into())]
+                    }
                 )
             ))
         );
@@ -1313,12 +1318,14 @@ mod tests {
             T::IdentFrag("b".into()),
             T::Comma,
             T::IdentFrag("b".into()),
+            T::Comma,
+            T::IdentFrag("c".into()),
             T::RParen,
         ];
         let mut tokens = Tokens::new(&tokens, T::EndOfInput);
         assert_eq!(
             parse_expression(&mut tokens, 0),
-            Err("points may only have 2 coordinates".into())
+            Err("points may only have 2 or 3 coordinates".into())
         );
     }
 
@@ -1801,14 +1808,22 @@ mod tests {
             T::IdentFrag("p".into()),
             T::Dot,
             T::IdentFrag("y".into()),
+            T::Plus,
+            T::IdentFrag("p".into()),
+            T::Dot,
+            T::IdentFrag("z".into()),
         ];
         let mut tokens = Tokens::new(&tokens, T::EndOfInput);
         assert_eq!(
             parse_expression(&mut tokens, 0),
             Ok(binary(
                 Add,
-                unary(PointX, Id("p".into())),
-                unary(PointY, Id("p".into())),
+                binary(
+                    Add,
+                    unary(PointX, Id("p".into())),
+                    unary(PointY, Id("p".into())),
+                ),
+                unary(PointZ, Id("p".into()))
             ))
         );
         assert_eq!(tokens.next(), &T::EndOfInput);

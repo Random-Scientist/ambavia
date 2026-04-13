@@ -1200,11 +1200,24 @@ impl ExpressionList {
                     ];
                     let line_width = 2.5;
                     let fill_opacity = 0.4;
-                    let point = |nodes: &mut Vec<Node>, x: f64, y: f64| {
+                    let point2 = |nodes: &mut Vec<Node>, x: f64, y: f64| {
                         let mut inner = vec![];
                         number(&mut inner, x);
                         inner.push(C(','));
                         number(&mut inner, y);
+                        nodes.push(Node::DelimitedGroup {
+                            left: Bracket::Paren,
+                            right: Bracket::Paren,
+                            inner,
+                        });
+                    };
+                    let point3 = |nodes: &mut Vec<Node>, x: f64, y: f64, z: f64| {
+                        let mut inner = vec![];
+                        number(&mut inner, x);
+                        inner.push(C(','));
+                        number(&mut inner, y);
+                        inner.push(C(','));
+                        number(&mut inner, z);
                         nodes.push(Node::DelimitedGroup {
                             left: Bracket::Paren,
                             right: Bracket::Paren,
@@ -1246,11 +1259,12 @@ impl ExpressionList {
                                 operation: parse::op::OpName::Point,
                                 args: arguments,
                             } = value
+                                && arguments.len() == 2
                                 && let Some(x) = get_number(&arguments[0])
                                 && let Some(y) = get_number(&arguments[1])
                             {
                                 let mut latex = vec![C('=')];
-                                point(&mut latex, x, y);
+                                point2(&mut latex, x, y);
                                 e.output = Output {
                                     ui: OutputUi::None,
                                     data: OutputData::DraggablePoint(Geometry {
@@ -1475,25 +1489,54 @@ impl ExpressionList {
                                                 inner,
                                             });
                                         }
-                                        Type::Point => {
+                                        Type::Point2 => {
                                             let x = vm.vars[v].clone().number();
                                             let y = vm.vars[v + 1.into()].clone().number();
                                             draw_point(x, y);
-                                            point(&mut nodes, x, y);
+                                            point2(&mut nodes, x, y);
                                         }
-                                        Type::PointList => {
+                                        Type::Point2List => {
                                             let a = vm.vars[v].clone().list();
                                             let mut inner = vec![];
-                                            for (i, p) in a.borrow().chunks(2).enumerate() {
+                                            for (i, &[x, y]) in
+                                                a.borrow().as_chunks().0.iter().enumerate()
+                                            {
                                                 if i < list_limit {
                                                     if i > 0 {
                                                         inner.push(C(','));
                                                     }
-                                                    point(&mut inner, p[0], p[1]);
+                                                    point2(&mut inner, x, y);
                                                 } else if i == list_limit {
                                                     inner.extend([C(','), C('.'), C('.'), C('.')]);
                                                 }
-                                                draw_point(p[0], p[1]);
+                                                draw_point(x, y);
+                                            }
+                                            nodes.push(Node::DelimitedGroup {
+                                                left: Bracket::Square,
+                                                right: Bracket::Square,
+                                                inner,
+                                            });
+                                        }
+                                        Type::Point3 => {
+                                            let x = vm.vars[v].clone().number();
+                                            let y = vm.vars[v + 1.into()].clone().number();
+                                            let z = vm.vars[v + 2.into()].clone().number();
+                                            point3(&mut nodes, x, y, z);
+                                        }
+                                        Type::Point3List => {
+                                            let a = vm.vars[v].clone().list();
+                                            let mut inner = vec![];
+                                            for (i, &[x, y, z]) in
+                                                a.borrow().as_chunks().0.iter().enumerate()
+                                            {
+                                                if i < list_limit {
+                                                    if i > 0 {
+                                                        inner.push(C(','));
+                                                    }
+                                                    point3(&mut inner, x, y, z);
+                                                } else if i == list_limit {
+                                                    inner.extend([C(','), C('.'), C('.'), C('.')]);
+                                                }
                                             }
                                             nodes.push(Node::DelimitedGroup {
                                                 left: Bracket::Square,

@@ -14,10 +14,12 @@ use rstest::rstest;
 #[derive(Debug)]
 enum Value {
     Number(f64),
-    Point(f64, f64),
+    Point2(f64, f64),
+    Point3(f64, f64, f64),
     Polygon(Vec<(f64, f64)>),
     NumberList(Vec<f64>),
-    PointList(Vec<(f64, f64)>),
+    Point2List(Vec<(f64, f64)>),
+    Point3List(Vec<(f64, f64, f64)>),
     PolygonList(Vec<Vec<(f64, f64)>>),
     EmptyList,
 }
@@ -30,9 +32,17 @@ impl PartialEq for Value {
             (Self::NumberList(l), Self::NumberList(r)) => {
                 l.len() == r.len() && zip(l, r).all(|(l, r)| eq(l, r))
             }
-            (Self::Point(lx, ly), Self::Point(rx, ry)) => eq(lx, rx) && eq(ly, ry),
-            (Self::PointList(l), Self::PointList(r)) | (Self::Polygon(l), Self::Polygon(r)) => {
+            (Self::Point2(lx, ly), Self::Point2(rx, ry)) => eq(lx, rx) && eq(ly, ry),
+            (Self::Point3(lx, ly, lz), Self::Point3(rx, ry, rz)) => {
+                eq(lx, rx) && eq(ly, ry) && eq(lz, rz)
+            }
+            (Self::Point2List(l), Self::Point2List(r)) | (Self::Polygon(l), Self::Polygon(r)) => {
                 l.len() == r.len() && zip(l, r).all(|((lx, ly), (rx, ry))| eq(lx, rx) && eq(ly, ry))
+            }
+            (Self::Point3List(l), Self::Point3List(r)) => {
+                l.len() == r.len()
+                    && zip(l, r)
+                        .all(|((lx, ly, lz), (rx, ry, rz))| eq(lx, rx) && eq(ly, ry) && eq(lz, rz))
             }
             (Self::PolygonList(l), Self::PolygonList(r)) => {
                 l.len() == r.len()
@@ -61,13 +71,25 @@ impl From<i64> for Value {
 
 impl From<(f64, f64)> for Value {
     fn from(value: (f64, f64)) -> Self {
-        Value::Point(value.0, value.1)
+        Value::Point2(value.0, value.1)
     }
 }
 
 impl From<(i64, i64)> for Value {
     fn from(value: (i64, i64)) -> Self {
         (value.0 as f64, value.1 as f64).into()
+    }
+}
+
+impl From<(f64, f64, f64)> for Value {
+    fn from(value: (f64, f64, f64)) -> Self {
+        Value::Point3(value.0, value.1, value.2)
+    }
+}
+
+impl From<(i64, i64, i64)> for Value {
+    fn from(value: (i64, i64, i64)) -> Self {
+        (value.0 as f64, value.1 as f64, value.2 as f64).into()
     }
 }
 
@@ -85,13 +107,25 @@ impl<const N: usize> From<[i64; N]> for Value {
 
 impl<const N: usize> From<&[(f64, f64); N]> for Value {
     fn from(value: &[(f64, f64); N]) -> Self {
-        Value::PointList(value.into())
+        Value::Point2List(value.into())
     }
 }
 
 impl<const N: usize> From<[(i64, i64); N]> for Value {
     fn from(value: [(i64, i64); N]) -> Self {
         (&value.map(|(x, y)| (x as f64, y as f64))).into()
+    }
+}
+
+impl<const N: usize> From<&[(f64, f64, f64); N]> for Value {
+    fn from(value: &[(f64, f64, f64); N]) -> Self {
+        Value::Point3List(value.into())
+    }
+}
+
+impl<const N: usize> From<[(i64, i64, i64); N]> for Value {
+    fn from(value: [(i64, i64, i64); N]) -> Self {
+        (&value.map(|(x, y, z)| (x as f64, y as f64, z as f64))).into()
     }
 }
 
@@ -139,22 +173,40 @@ fn assert_expression_eq<'a>(source: &str, value: Value) {
                 let list = l.borrow().clone();
                 Value::NumberList(list)
             }
-            Type::Point => Value::Point(
+            Type::Point2 => Value::Point2(
                 vm.vars[v].clone().number(),
                 vm.vars[v + 1.into()].clone().number()
             ),
-            Type::PointList | Type::Polygon => {
+            Type::Point2List | Type::Polygon => {
                 let a = vm.vars[v].clone().list();
                 let list = a
                     .borrow()
-                    .chunks(2)
-                    .map(|p| (p[0], p[1]))
+                    .as_chunks()
+                    .0
+                    .iter()
+                    .map(|&[x, y]| (x, y))
                     .collect::<Vec<_>>();
-                (if *ty == Type::PointList {
-                    Value::PointList
+                (if *ty == Type::Point2List {
+                    Value::Point2List
                 } else {
                     Value::Polygon
                 })(list)
+            }
+            Type::Point3 => Value::Point3(
+                vm.vars[v].clone().number(),
+                vm.vars[v + 1.into()].clone().number(),
+                vm.vars[v + 2.into()].clone().number()
+            ),
+            Type::Point3List => {
+                let a = vm.vars[v].clone().list();
+                let list = a
+                    .borrow()
+                    .as_chunks()
+                    .0
+                    .iter()
+                    .map(|&[x, y, z]| (x, y, z))
+                    .collect::<Vec<_>>();
+                Value::Point3List(list)
             }
             Type::PolygonList => {
                 let a = vm.vars[v].clone().polygon_list();
@@ -207,6 +259,7 @@ const NAN: f64 = f64::NAN;
 #[case(r"1 + 3", 4)]
 #[case(r"(3,4) \cdot (5,6)", 39)]
 #[case(r"(3,4) + (5,6)", (8, 10))]
+#[case(r"(3,4,5) + (5,6,7)", (8, 10, 12))]
 #[case(r"\{\}", 1)]
 #[case(r"\{1<2\}", 1)]
 #[case(r"\{2<1\}", NAN)]
@@ -253,11 +306,11 @@ fn expression_eq(#[case] expression: &str, #[case] expected: impl Into<Value>) {
 #[rstest]
 #[case(
     r"\{1<2:(3,4),5\}",
-    TypeError::PiecewiseBranchMismatch(Type::Point, Type::Number)
+    TypeError::PiecewiseBranchMismatch(Type::Point2, Type::Number)
 )]
 #[case(
     r"\sort([])+(0,0)",
-    TypeError::OpError(OpError::NoOverload(OpName::Add, vec![Type::NumberList, Type::Point]))
+    TypeError::OpError(OpError::NoOverload(OpName::Add, vec![Type::NumberList, Type::Point2]))
 )]
 fn expression_type_error(#[case] expression: &str, #[case] error: TypeError) {
     assert_type_error(expression, error);

@@ -17,11 +17,14 @@ use parse::{
 fn tc_list_to_ib_base(ty: TcType) -> IbBaseType {
     match ty {
         TcType::NumberList => IbBaseType::Number,
-        TcType::PointList => IbBaseType::Point,
+        TcType::Point2List => IbBaseType::Point2,
+        TcType::Point3List => IbBaseType::Point3,
         TcType::PolygonList => IbBaseType::Polygon,
         TcType::BoolList => IbBaseType::Bool,
         TcType::EmptyList => IbBaseType::Number,
-        TcType::Number | TcType::Bool | TcType::Point | TcType::Polygon => unreachable!(),
+        TcType::Number | TcType::Bool | TcType::Point2 | TcType::Point3 | TcType::Polygon => {
+            unreachable!()
+        }
     }
 }
 
@@ -215,10 +218,11 @@ fn compile_expression(expression: &TypedExpression, builder: &mut InstructionBui
         Expression::Op { operation, args } => {
             use parse::op::Op;
             match operation {
-                Op::JoinNumber | Op::JoinPoint | Op::JoinPolygon => {
+                Op::JoinNumber | Op::JoinPoint2 | Op::JoinPoint3 | Op::JoinPolygon => {
                     let (base, push, concat) = match operation {
                         Op::JoinNumber => (IbBaseType::Number, Push, Concat),
-                        Op::JoinPoint => (IbBaseType::Point, Push2, Concat2),
+                        Op::JoinPoint2 => (IbBaseType::Point2, Push2, Concat2),
+                        Op::JoinPoint3 => (IbBaseType::Point3, Push3, Concat3),
                         Op::JoinPolygon => (IbBaseType::Polygon, PushPolygon, ConcatPolygon),
                         _ => unreachable!(),
                     };
@@ -278,69 +282,97 @@ fn compile_expression(expression: &TypedExpression, builder: &mut InstructionBui
                         Op::Floor => builder.instr1(Floor, arg()),
                         Op::Ceil => builder.instr1(Ceil, arg()),
                         Op::Mod => builder.instr2(Mod, arg(), arg()),
-                        Op::Midpoint => builder.instr2(Midpoint, arg(), arg()),
-                        Op::Distance => builder.instr2(Distance, arg(), arg()),
+                        Op::Midpoint2 => builder.instr2(Midpoint2, arg(), arg()),
+                        Op::Midpoint3 => builder.instr2(Midpoint3, arg(), arg()),
+                        Op::Distance2 => builder.instr2(Distance2, arg(), arg()),
+                        Op::Distance3 => builder.instr2(Distance3, arg(), arg()),
                         Op::Min => builder.instr1(Min, arg()),
                         Op::Max => builder.instr1(Max, arg()),
                         Op::Median => builder.instr1(Median, arg()),
                         Op::Argmin => builder.instr1(Argmin, arg()),
                         Op::Argmax => builder.instr1(Argmax, arg()),
                         Op::TotalNumber => builder.instr1(Total, arg()),
-                        Op::TotalPoint => builder.instr1(Total2, arg()),
+                        Op::TotalPoint2 => builder.instr1(Total2, arg()),
+                        Op::TotalPoint3 => builder.instr1(Total3, arg()),
                         Op::MeanNumber => builder.instr1(Mean, arg()),
-                        Op::MeanPoint => builder.instr1(Mean2, arg()),
+                        Op::MeanPoint2 => builder.instr1(Mean2, arg()),
+                        Op::MeanPoint3 => builder.instr1(Mean3, arg()),
                         Op::CountNumber => builder.instr1(Count, arg()),
-                        Op::CountPoint => builder.instr1(Count2, arg()),
+                        Op::CountPoint2 => builder.instr1(Count2, arg()),
+                        Op::CountPoint3 => builder.instr1(Count3, arg()),
                         Op::CountPolygon => builder.instr1(CountPolygonList, arg()),
                         Op::RepeatNumber => builder.instr2(Repeat, arg(), arg()),
-                        Op::RepeatPoint => builder.instr2(Repeat2, arg(), arg()),
+                        Op::RepeatPoint2 => builder.instr2(Repeat2, arg(), arg()),
+                        Op::RepeatPoint3 => builder.instr2(Repeat3, arg(), arg()),
                         Op::RepeatPolygon => builder.instr2(RepeatPolygon, arg(), arg()),
                         Op::RepeatNumberList => builder.instr2(RepeatList, arg(), arg()),
-                        Op::RepeatPointList => builder.instr2(Repeat2List, arg(), arg()),
+                        Op::RepeatPoint2List => builder.instr2(Repeat2List, arg(), arg()),
+                        Op::RepeatPoint3List => builder.instr2(Repeat3List, arg(), arg()),
                         Op::RepeatPolygonList => builder.instr2(RepeatPolygonList, arg(), arg()),
                         Op::UniqueNumber => builder.instr1(Unique, arg()),
-                        Op::UniquePoint => builder.instr1(Unique2, arg()),
+                        Op::UniquePoint2 => builder.instr1(Unique2, arg()),
+                        Op::UniquePoint3 => builder.instr1(Unique3, arg()),
                         Op::UniquePolygon => builder.instr1(UniquePolygon, arg()),
                         Op::UniquePermNumber => builder.instr1(UniquePerm, arg()),
-                        Op::UniquePermPoint => builder.instr1(UniquePerm2, arg()),
+                        Op::UniquePermPoint2 => builder.instr1(UniquePerm2, arg()),
+                        Op::UniquePermPoint3 => builder.instr1(UniquePerm3, arg()),
                         Op::UniquePermPolygon => builder.instr1(UniquePermPolygon, arg()),
                         Op::Sort => builder.instr1(Sort, arg()),
                         Op::SortKeyNumber => builder.instr2(SortKey, arg(), arg()),
-                        Op::SortKeyPoint => builder.instr2(SortKey2, arg(), arg()),
+                        Op::SortKeyPoint2 => builder.instr2(SortKey2, arg(), arg()),
+                        Op::SortKeyPoint3 => builder.instr2(SortKey3, arg(), arg()),
                         Op::SortKeyPolygon => builder.instr2(SortKeyPolygon, arg(), arg()),
                         Op::SortPerm => builder.instr1(SortPerm, arg()),
                         Op::Polygon => builder.instr1(Polygon, arg()),
                         Op::AddNumber => builder.instr2(Add, arg(), arg()),
-                        Op::AddPoint => builder.instr2(Add2, arg(), arg()),
+                        Op::AddPoint2 => builder.instr2(Add2, arg(), arg()),
+                        Op::AddPoint3 => builder.instr2(Add3, arg(), arg()),
                         Op::SubNumber => builder.instr2(Sub, arg(), arg()),
-                        Op::SubPoint => builder.instr2(Sub2, arg(), arg()),
+                        Op::SubPoint2 => builder.instr2(Sub2, arg(), arg()),
+                        Op::SubPoint3 => builder.instr2(Sub3, arg(), arg()),
                         Op::MulNumber => builder.instr2(Mul, arg(), arg()),
-                        Op::MulNumberPoint => builder.instr2(Mul1_2, arg(), arg()),
+                        Op::MulNumberPoint2 => builder.instr2(Mul1_2, arg(), arg()),
+                        Op::MulNumberPoint3 => builder.instr2(Mul1_3, arg(), arg()),
                         Op::DivNumber => builder.instr2(Div, arg(), arg()),
-                        Op::DivPointNumber => builder.instr2(Div2_1, arg(), arg()),
+                        Op::DivPoint2Number => builder.instr2(Div2_1, arg(), arg()),
+                        Op::DivPoint3Number => builder.instr2(Div3_1, arg(), arg()),
                         Op::Pow => builder.instr2(Pow, arg(), arg()),
-                        Op::Dot => builder.instr2(Dot, arg(), arg()),
-                        Op::Point => builder.instr2(Point, arg(), arg()),
+                        Op::Dot2 => builder.instr2(Dot2, arg(), arg()),
+                        Op::Dot3 => builder.instr2(Dot3, arg(), arg()),
+                        Op::Cross => builder.instr2(Cross, arg(), arg()),
+                        Op::Point2 => builder.instr2(Point2, arg(), arg()),
+                        Op::Point3 => builder.instr3(Point3, arg(), arg(), arg()),
                         Op::IndexNumberList => builder.instr2(Index, arg(), arg()),
-                        Op::IndexPointList => builder.instr2(Index2, arg(), arg()),
+                        Op::IndexPoint2List => builder.instr2(Index2, arg(), arg()),
+                        Op::IndexPoint3List => builder.instr2(Index3, arg(), arg()),
                         Op::IndexPolygonList => builder.instr2(IndexPolygonList, arg(), arg()),
                         Op::NegNumber => builder.instr1(Neg, arg()),
-                        Op::NegPoint => builder.instr1(Neg2, arg()),
+                        Op::NegPoint2 => builder.instr1(Neg2, arg()),
+                        Op::NegPoint3 => builder.instr1(Neg3, arg()),
                         Op::Fac => builder.instr1((|| todo!("factorial"))(), arg()),
                         Op::Sqrt => builder.instr1(Sqrt, arg()),
-                        Op::Mag => builder.instr1(Hypot, arg()),
-                        Op::PointX => builder.instr1(PointX, arg()),
-                        Op::PointY => builder.instr1(PointY, arg()),
-                        Op::FilterNumberList | Op::FilterPointList | Op::FilterPolygonList => {
+                        Op::Mag2 => builder.instr1(Hypot2, arg()),
+                        Op::Mag3 => builder.instr1(Hypot3, arg()),
+                        Op::Point2X => builder.instr1(Point2X, arg()),
+                        Op::Point2Y => builder.instr1(Point2Y, arg()),
+                        Op::Point3X => builder.instr1(Point3X, arg()),
+                        Op::Point3Y => builder.instr1(Point3Y, arg()),
+                        Op::Point3Z => builder.instr1(Point3Z, arg()),
+                        Op::FilterNumberList
+                        | Op::FilterPoint2List
+                        | Op::FilterPoint3List
+                        | Op::FilterPolygonList => {
                             let mut result = builder.build_list(
                                 match ty {
                                     TcType::NumberList => IbBaseType::Number,
-                                    TcType::PointList => IbBaseType::Point,
+                                    TcType::Point2List => IbBaseType::Point2,
+                                    TcType::Point3List => IbBaseType::Point3,
                                     TcType::PolygonList => IbBaseType::Polygon,
                                     TcType::BoolList => IbBaseType::Bool,
                                     TcType::EmptyList => IbBaseType::Number,
                                     TcType::Number
-                                    | TcType::Point
+                                    | TcType::Point2
+                                    | TcType::Point3
                                     | TcType::Polygon
                                     | TcType::Bool => {
                                         unreachable!()
@@ -382,7 +414,7 @@ fn compile_expression(expression: &TypedExpression, builder: &mut InstructionBui
 
                             result
                         }
-                        Op::JoinNumber | Op::JoinPoint | Op::JoinPolygon => {
+                        Op::JoinNumber | Op::JoinPoint2 | Op::JoinPoint3 | Op::JoinPolygon => {
                             unreachable!()
                         }
                     }
@@ -454,14 +486,14 @@ mod tests {
 
     fn pt(e: Expression) -> TypedExpression {
         TypedExpression {
-            ty: TcType::Point,
+            ty: TcType::Point2,
             e,
         }
     }
 
     fn pt_list(e: Expression) -> TypedExpression {
         TypedExpression {
-            ty: TcType::PointList,
+            ty: TcType::Point2List,
             e,
         }
     }
@@ -478,14 +510,21 @@ mod tests {
         let v = match ty {
             TcType::Number => builder.load_const(0.0),
             TcType::NumberList => builder.build_list(IbBaseType::Number, vec![]),
-            TcType::Point => {
+            TcType::Point2 => {
                 let x = builder.load_const(0.0);
                 let y = builder.load_const(0.0);
-                builder.instr2(Point, x, y)
+                builder.instr2(Point2, x, y)
             }
-            TcType::PointList => builder.build_list(IbBaseType::Point, vec![]),
+            TcType::Point2List => builder.build_list(IbBaseType::Point2, vec![]),
+            TcType::Point3 => {
+                let x = builder.load_const(0.0);
+                let y = builder.load_const(0.0);
+                let z = builder.load_const(0.0);
+                builder.instr3(Point3, x, y, z)
+            }
+            TcType::Point3List => builder.build_list(IbBaseType::Point3, vec![]),
             TcType::Polygon => {
-                let p = builder.build_list(IbBaseType::Point, vec![]);
+                let p = builder.build_list(IbBaseType::Point2, vec![]);
                 builder.instr1(Polygon, p)
             }
             TcType::PolygonList => builder.build_list(IbBaseType::Polygon, vec![]),
@@ -500,9 +539,9 @@ mod tests {
         let mut b = Ib::default();
         create_empty_variable(&mut b, Id(0), TcType::Number);
         compile_expression(&num(TId(Id(0))), &mut b);
-        create_empty_variable(&mut b, Id(1), TcType::Point);
+        create_empty_variable(&mut b, Id(1), TcType::Point2);
         compile_expression(&pt(TId(Id(1))), &mut b);
-        create_empty_variable(&mut b, Id(2), TcType::PointList);
+        create_empty_variable(&mut b, Id(2), TcType::Point2List);
         compile_expression(&pt_list(TId(Id(2))), &mut b);
         create_empty_variable(&mut b, Id(3), TcType::NumberList);
         compile_expression(&num_list(TId(Id(3))), &mut b);
@@ -515,15 +554,15 @@ mod tests {
                 Load(VarIndex(0)),
                 LoadConst(0.0),
                 LoadConst(0.0),
-                Store2(VarIndex(2)),
-                Load2(VarIndex(2)),
-                BuildList(0),
-                Store(VarIndex(4)),
-                Load(VarIndex(4)),
+                Store2(VarIndex(3)),
+                Load2(VarIndex(3)),
                 BuildList(0),
                 Store(VarIndex(6)),
                 Load(VarIndex(6)),
-                Load2(VarIndex(2))
+                BuildList(0),
+                Store(VarIndex(9)),
+                Load(VarIndex(9)),
+                Load2(VarIndex(3))
             ]
         );
     }
@@ -533,7 +572,7 @@ mod tests {
         let make_vars_and_builder = || {
             let mut b = Ib::default();
             create_empty_variable(&mut b, Id(0), TcType::Number);
-            create_empty_variable(&mut b, Id(1), TcType::Point);
+            create_empty_variable(&mut b, Id(1), TcType::Point2);
             b
         };
         let number = || num(TId(Id(0)));
@@ -553,40 +592,40 @@ mod tests {
         let mut b = make_vars_and_builder();
         compile_expression(
             &pt(TOp {
-                operation: Op::AddPoint,
+                operation: Op::AddPoint2,
                 args: vec![point(), point()],
             }),
             &mut b,
         );
         assert_eq!(
             b.finish()[5..],
-            [Load2(VarIndex(2)), Load2(VarIndex(2)), Add2]
+            [Load2(VarIndex(3)), Load2(VarIndex(3)), Add2]
         );
 
         let mut b = make_vars_and_builder();
         compile_expression(
             &pt(TOp {
-                operation: Op::MulNumberPoint,
+                operation: Op::MulNumberPoint2,
                 args: vec![number(), point()],
             }),
             &mut b,
         );
         assert_eq!(
             b.finish()[5..],
-            [Load(VarIndex(0)), Load2(VarIndex(2)), Mul1_2]
+            [Load(VarIndex(0)), Load2(VarIndex(3)), Mul1_2]
         );
 
         let mut b = make_vars_and_builder();
         compile_expression(
             &pt(TOp {
-                operation: Op::DivPointNumber,
+                operation: Op::DivPoint2Number,
                 args: vec![point(), number()],
             }),
             &mut b,
         );
         assert_eq!(
             b.finish()[5..],
-            [Load2(VarIndex(2)), Load(VarIndex(0)), Div2_1]
+            [Load2(VarIndex(3)), Load(VarIndex(0)), Div2_1]
         );
 
         let mut b = make_vars_and_builder();
@@ -602,14 +641,14 @@ mod tests {
         let mut b = make_vars_and_builder();
         compile_expression(
             &num(TOp {
-                operation: Op::Dot,
+                operation: Op::Dot2,
                 args: vec![point(), point()],
             }),
             &mut b,
         );
         assert_eq!(
             b.finish()[5..],
-            [Load2(VarIndex(2)), Load2(VarIndex(2)), Dot]
+            [Load2(VarIndex(3)), Load2(VarIndex(3)), Dot2]
         );
     }
 }
